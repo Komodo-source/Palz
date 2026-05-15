@@ -1,0 +1,10 @@
+- BETTER UI
+=== SIGN UP PAGE ===
+DONE Date naissance -> date picker
+  - check if over 18
+DONE check email
+DONE - A TESTE connexion google
+DONE email synthax verifier
+DONE hasher les mdp
+DONE mettre une clé de sécurité pour accéder à la db
+- check email confirmation et vérif
