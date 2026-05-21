@@ -51,23 +51,22 @@ export default function ChatListScreen() {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) {
-      return date.toLocaleTimeString('en-US', {
+      return date.toLocaleTimeString('fr-FR', {
         hour: 'numeric',
         minute: '2-digit',
-        hour12: true,
       });
     } else if (diffDays === 1) {
-      return 'Yesterday';
+      return 'Hier';
     } else if (diffDays < 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short' });
+      return date.toLocaleDateString('fr-FR', { weekday: 'short' });
     }
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
   };
 
   const renderConversation = ({ item }) => (
     <TouchableOpacity
       style={[styles.conversationItem, { borderBottomColor: colors.backgroundSelected }]}
-      onPress={() => router.push(`/chat/${item.id}`)}
+      onPress={() => router.push(`/(tabs)/chat/${item.id}`)}
       activeOpacity={0.7}
     >
       <View style={[styles.avatar, { backgroundColor: colors.backgroundSelected }]}>
@@ -78,14 +77,14 @@ export default function ChatListScreen() {
       <View style={styles.conversationInfo}>
         <View style={styles.conversationHeader}>
           <Text style={[styles.conversationName, { color: colors.text }]} numberOfLines={1}>
-            {item.other_user?.full_name || item.other_user?.user_name || 'Unknown'}
+            {item.other_user?.full_name || item.other_user?.user_name || 'Inconnue'}
           </Text>
           <Text style={[styles.conversationTime, { color: colors.textSecondary }]}>
             {formatTime(item.last_message?.created_at)}
           </Text>
         </View>
         <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
-          {item.last_message?.content || 'No messages yet'}
+          {item.last_message?.content || 'Aucun message'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -102,7 +101,7 @@ export default function ChatListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Chats</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Conversations</Text>
       </View>
       <FlatList
         data={conversations}
@@ -116,7 +115,7 @@ export default function ChatListScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>💬</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No conversations yet.{'\n'}Match with someone to start chatting!
+              Pas encore de conversations.{'\n'}Matche avec quelqu'un pour discuter !
             </Text>
           </View>
         }

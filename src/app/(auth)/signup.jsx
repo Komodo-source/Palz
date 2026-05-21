@@ -10,23 +10,37 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
-// DateTimePicker is native-only — lazy-require to avoid web bundle errors
 let DateTimePicker = null;
 if (Platform.OS !== 'web') {
   DateTimePicker = require('@react-native-community/datetimepicker').default;
 }
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import SHA256 from 'crypto-js/sha256';
+import * as ImagePicker from 'expo-image-picker';
+
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing } from '@/constants/theme';
 import { isValidEmail } from '@/utils/validation';
 import { useGoogleAuth } from '@/hooks/use-google-auth';
-import { authApi } from '@/services/api';
+import { authApi, uploadApi, usersApi } from '@/services/api';
 
-// Format date as YYYY-MM-DD
+const PALETTE = {
+  rose: '#FF8FA3',
+  roseLight: '#FFB5C2',
+  rosePale: '#FFF0F3',
+  lavender: '#E8D5F5',
+  lavenderPale: '#F8F4FF',
+  cream: '#FFF9F5',
+  white: '#FFFFFF',
+  textDark: '#4A3728',
+  textMid: '#7A6B60',
+  textLight: '#B0A098',
+  border: '#F0E0E0',
+};
+
 const formatDate = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -37,28 +51,64 @@ const formatDate = (date) => {
 export default function SignupScreen() {
   const { signup, googleLogin } = useAuth();
   const colorScheme = useColorScheme();
-  const colors = getColors(colorScheme);
   const googleAuth = useGoogleAuth();
 
   const [fullName, setFullName] = useState('');
   const [userName, setUserName] = useState('');
-  const [Prenom, setPrenom] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState(null); // Date object or null
-  const [dateText, setDateText] = useState(''); // Raw text for web input
+  const [dateOfBirth, setDateOfBirth] = useState(null);
+  const [dateText, setDateText] = useState('');
   const [phone, setPhone] = useState('');
+  const [profilePhotoUri, setProfilePhotoUri] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  const pickProfilePhoto = () => {
+    Alert.alert('Photo de profil', 'Choisis la source', [
+      {
+        text: 'Appareil photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') return;
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85,
+          });
+          if (!result.canceled && result.assets?.[0]) setProfilePhotoUri(result.assets[0].uri);
+        },
+      },
+      {
+        text: 'Galerie',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') return;
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85,
+          });
+          if (!result.canceled && result.assets?.[0]) setProfilePhotoUri(result.assets[0].uri);
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
   const UpgradeStep = () => {
-    if (!Prenom.trim() || !email.trim() || !userName.trim() || !fullName.trim()) {
-      Alert.alert('Oopsie', 'Remplissez tous les champs');
+    if (!email.trim() || !userName.trim() || !fullName.trim()) {
+      Alert.alert('Oups', 'Remplis tous les champs');
       return;
     }
     if (!isValidEmail(email.trim())) {
       Alert.alert('Email invalide', 'Veuillez entrer une adresse email valide.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(userName.trim())) {
+      Alert.alert('Pseudo invalide', 'Le pseudo ne peut contenir que des lettres, chiffres et underscores (pas d\'espaces ni de tirets).');
+      return;
+    }
+    if (userName.trim().length < 3) {
+      Alert.alert('Pseudo trop court', 'Le pseudo doit faire au moins 3 caractères.');
       return;
     }
     setStep(1);
@@ -66,7 +116,7 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     if (!fullName.trim() || !userName.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Oopsie', 'Remplissez tous les champs');
+      Alert.alert('Oups', 'Remplis tous les champs');
       return;
     }
 
@@ -76,13 +126,12 @@ export default function SignupScreen() {
     }
 
     if (password.length < 6) {
-      Alert.alert('Aïe', 'Ce mot de passe est trop court');
+      Alert.alert('Oups', 'Ce mot de passe est trop court (6 caractères minimum)');
       return;
     }
 
     setLoading(true);
     try {
-      // On web, parse raw date text if not yet parsed (no blur event)
       let finalDob = dateOfBirth;
       if (Platform.OS === 'web' && !finalDob && dateText.trim()) {
         const parsed = new Date(dateText.trim());
@@ -91,32 +140,49 @@ export default function SignupScreen() {
         }
       }
 
-      // Hash password with SHA-256 before sending
-      const hashedPassword = SHA256(password).toString();
-
       await signup({
-        surname: fullName.trim(),
-        firstname: Prenom.trim(),
+        full_name: fullName.trim(),
         user_name: userName.trim(),
         email: email.trim(),
-        password: hashedPassword,
+        password,
         date_of_birth: finalDob ? formatDate(finalDob) : undefined,
         phone: phone || undefined,
       });
 
-      // First registration → go to personality questionnaire
+      // Upload profile photo after account is created (token is now stored)
+      if (profilePhotoUri) {
+        setUploadingPhoto(true);
+        try {
+          const ext = profilePhotoUri.split('.').pop() || 'jpg';
+          const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+          const { url } = await uploadApi.uploadImage({
+            uri: profilePhotoUri,
+            fileName: `profile.${ext}`,
+            mimeType,
+          });
+          // Extract just the filename stored in Supabase
+          const filename = url.includes('/') ? url.split('/').pop() : url;
+          await usersApi.updateProfile({ profile_image: [filename] });
+        } catch (photoErr) {
+          console.warn('Profile photo upload failed:', photoErr);
+          // Non-fatal — user can add photo from settings
+        } finally {
+          setUploadingPhoto(false);
+        }
+      }
+
       router.replace('/onboarding');
     } catch (err) {
       console.log('err', err);
-      const msg = err.response?.data?.error || 'Signup failed. Please try again.';
-      Alert.alert('Error', msg);
+      const msg = err.displayMessage || err.response?.data?.error || 'Inscription échouée. Réessaie.';
+      Alert.alert('Erreur', msg);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDateChange = (event, selectedDate) => {
-    // On Android, the picker closes automatically after selection
+    if (!event) return;
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
@@ -129,102 +195,60 @@ export default function SignupScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.logo, { color: colors.text }]}>Palz</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Créez votre compte et faites-vous de nouveaux amis !
+          <View style={styles.logoContainer}>
+            <Text style={styles.logo}>Palz</Text>
+          </View>
+          <Text style={styles.subtitle}>
+            Crée ton compte et commence à rencontrer des amis formidables !
           </Text>
         </View>
 
         {/* Step indicators */}
         <View style={styles.stepIndicator}>
-          {[0, 1].map((s) => (
-            <View
-              key={s}
-              style={[
-                styles.stepDot,
-                {
-                  backgroundColor: step === s ? '#FF6B8A' : colors.backgroundSelected,
-                },
-              ]}
-            />
-          ))}
+          <View style={[styles.stepDot, step === 0 && styles.stepDotActive]} />
+          <View style={[styles.stepDot, step === 1 && styles.stepDotActive]} />
         </View>
 
         {step === 0 ? (
           <View style={styles.form}>
-            <Text style={[styles.label, { color: colors.text }]}>Nom *</Text>
+            <Text style={styles.label}>Nom complet *</Text>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: colors.backgroundSelected,
-                },
-              ]}
-              placeholder="Carpenter"
-              placeholderTextColor={colors.textSecondary}
+              style={styles.input}
+              placeholder="Sabrina Carpenter"
+              placeholderTextColor={PALETTE.textLight}
               value={fullName}
               onChangeText={setFullName}
             />
 
-            <Text style={[styles.label, { color: colors.text }]}>Prénom *</Text>
+            <Text style={styles.label}>Pseudo *</Text>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: colors.backgroundSelected,
-                },
-              ]}
-              placeholder="Sabrina"
-              placeholderTextColor={colors.textSecondary}
-              autoCapitalize="none"
-              value={Prenom}
-              onChangeText={setPrenom}
-            />
-
-            <Text style={[styles.label, { color: colors.text }]}>Pseudo *</Text>
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: colors.backgroundSelected,
-                },
-              ]}
+              style={styles.input}
               placeholder="janedoe"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={PALETTE.textLight}
               autoCapitalize="none"
+              autoCorrect={false}
               value={userName}
               onChangeText={setUserName}
             />
+            <Text style={styles.hint}>Lettres, chiffres et _ uniquement</Text>
 
-            <Text style={[styles.label, { color: colors.text }]}>Email *</Text>
+            <Text style={styles.label}>Email *</Text>
             <TextInput
               style={[
                 styles.input,
                 email.length > 0 && !isValidEmail(email) && styles.inputError,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: email.length > 0 && !isValidEmail(email)
-                    ? '#FF4444'
-                    : colors.backgroundSelected,
-                },
               ]}
               placeholder="jane@example.com"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={PALETTE.textLight}
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
@@ -234,50 +258,56 @@ export default function SignupScreen() {
               <Text style={styles.errorText}>Format d'email invalide</Text>
             )}
 
+            {/* Profile photo picker */}
+            <Text style={styles.label}>Photo de profil (optionnel)</Text>
+            <TouchableOpacity
+              style={styles.photoPicker}
+              onPress={pickProfilePhoto}
+              activeOpacity={0.8}
+            >
+              {profilePhotoUri ? (
+                <Image source={{ uri: profilePhotoUri }} style={styles.photoPreview} />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <Ionicons name="camera-outline" size={28} color={PALETTE.rose} />
+                  <Text style={styles.photoPlaceholderText}>Ajouter une photo</Text>
+                </View>
+              )}
+              {profilePhotoUri && (
+                <View style={styles.photoEditBadge}>
+                  <Ionicons name="pencil" size={12} color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.nextButton}
               onPress={() => UpgradeStep()}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>Next</Text>
+              <Text style={styles.buttonText}>Suivant</Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.form}>
-            <Text style={[styles.label, { color: colors.text }]}>Mot de Passe *</Text>
+            <Text style={styles.label}>Mot de passe *</Text>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: colors.backgroundSelected,
-                },
-              ]}
-              placeholder="At least 6 characters"
-              placeholderTextColor={colors.textSecondary}
+              style={styles.input}
+              placeholder="6 caractères minimum"
+              placeholderTextColor={PALETTE.textLight}
               secureTextEntry
               value={password}
               onChangeText={setPassword}
             />
-            <Text style={[styles.hint, { color: colors.textSecondary }]}>
-              Hashé avec SHA-256 avant envoi
-            </Text>
 
-            <Text style={[styles.label, { color: colors.text }]}>Date de Naissance</Text>
+
+            <Text style={styles.label}>Date de naissance</Text>
             {Platform.OS === 'web' ? (
-              /* Web fallback: plain text input, parsed only on submit */
               <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.backgroundElement,
-                    color: colors.text,
-                    borderColor: colors.backgroundSelected,
-                  },
-                ]}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textSecondary}
+                style={styles.input}
+                placeholder="AAAA-MM-JJ"
+                placeholderTextColor={PALETTE.textLight}
                 value={dateText}
                 onChangeText={setDateText}
                 onBlur={() => {
@@ -290,28 +320,16 @@ export default function SignupScreen() {
             ) : (
               <>
                 <TouchableOpacity
-                  style={[
-                    styles.input,
-                    styles.dateButton,
-                    {
-                      backgroundColor: colors.backgroundElement,
-                      borderColor: colors.backgroundSelected,
-                    },
-                  ]}
+                  style={styles.input}
                   onPress={() => setShowDatePicker(true)}
                   activeOpacity={0.7}
                 >
-                  <Text
-                    style={{
-                      color: dateOfBirth ? colors.text : colors.textSecondary,
-                      fontSize: 16,
-                    }}
-                  >
-                    {dateOfBirth ? formatDate(dateOfBirth) : 'YYYY-MM-DD'}
+                  <Text style={{ color: dateOfBirth ? PALETTE.textDark : PALETTE.textLight, fontSize: 16 }}>
+                    {dateOfBirth ? formatDate(dateOfBirth) : 'AAAA-MM-JJ'}
                   </Text>
                 </TouchableOpacity>
 
-                {showDatePicker && (
+                {showDatePicker && DateTimePicker && (
                   <DateTimePicker
                     value={dateOfBirth || new Date(2000, 0, 1)}
                     mode="date"
@@ -322,7 +340,6 @@ export default function SignupScreen() {
                   />
                 )}
 
-                {/* iOS: close button for inline picker */}
                 {showDatePicker && Platform.OS === 'ios' && (
                   <TouchableOpacity
                     style={styles.dateConfirmButton}
@@ -335,18 +352,11 @@ export default function SignupScreen() {
               </>
             )}
 
-            <Text style={[styles.label, { color: colors.text }]}>Numéro de Téléphone (optionel)</Text>
+            <Text style={styles.label}>Téléphone (optionnel)</Text>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  color: colors.text,
-                  borderColor: colors.backgroundSelected,
-                },
-              ]}
+              style={styles.input}
               placeholder="07 12 34 56 78"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={PALETTE.textLight}
               keyboardType="phone-pad"
               value={phone}
               onChangeText={setPhone}
@@ -354,23 +364,30 @@ export default function SignupScreen() {
 
             <View style={styles.buttonRow}>
               <TouchableOpacity
-                style={[styles.backButton, { borderColor: colors.backgroundSelected }]}
+                style={styles.backButton}
                 onPress={() => setStep(0)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.backButtonText, { color: colors.text }]}>Back</Text>
+                <Ionicons name="chevron-back" size={20} color={PALETTE.textDark} />
+                <Text style={styles.backButtonText}>Retour</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.button, { flex: 1, opacity: loading ? 0.7 : 1 }]}
+                style={[styles.button, { flex: 1, opacity: loading || uploadingPhoto ? 0.7 : 1 }]}
                 onPress={handleSignup}
-                disabled={loading}
+                disabled={loading || uploadingPhoto}
                 activeOpacity={0.8}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
+                {loading || uploadingPhoto ? (
+                  <>
+                    <ActivityIndicator color="#fff" />
+                    {uploadingPhoto && <Text style={[styles.buttonText, { fontSize: 13 }]}>Photo...</Text>}
+                  </>
                 ) : (
-                  <Text style={styles.buttonText}>Create Account</Text>
+                  <>
+                    <Ionicons name="sparkles" size={18} color="#fff" />
+                    <Text style={styles.buttonText}>Créer mon compte</Text>
+                  </>
                 )}
               </TouchableOpacity>
             </View>
@@ -379,37 +396,37 @@ export default function SignupScreen() {
 
         {/* Divider */}
         <View style={styles.dividerRow}>
-          <View style={[styles.dividerLine, { backgroundColor: colors.backgroundSelected }]} />
-          <Text style={[styles.dividerText, { color: colors.textSecondary }]}>or</Text>
-          <View style={[styles.dividerLine, { backgroundColor: colors.backgroundSelected }]} />
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>ou</Text>
+          <View style={styles.dividerLine} />
         </View>
 
         {/* Google Sign-Up */}
         <TouchableOpacity
-          style={[styles.googleButton, { borderColor: colors.backgroundSelected }]}
-          onPress={async () => {              const idToken = await googleAuth.signInWithGoogle();
-              if (!idToken) return;
+          style={styles.googleButton}
+          onPress={async () => {
+            const idToken = await googleAuth.signInWithGoogle();
+            if (!idToken) return;
 
-              setLoading(true);
-              try {
-                const res = await authApi.googleAuth(idToken);
-                const { user, token: newToken, isNewUser } = res.data;
+            setLoading(true);
+            try {
+              const res = await authApi.googleAuth(idToken);
+              const { user, token: newToken, isNewUser } = res.data;
 
-                // Update auth context state
-                await googleLogin(user, newToken);
+              await googleLogin(user, newToken);
 
-                if (isNewUser) {
-                  router.replace('/onboarding');
-                } else {
-                  router.replace('/(tabs)');
-                }
-              } catch (err) {
-                console.error('Google auth error:', err);
-                const msg = err.response?.data?.error || 'Google sign-up failed. Please try again.';
-                Alert.alert('Error', msg);
-              } finally {
-                setLoading(false);
+              if (isNewUser) {
+                router.replace('/onboarding');
+              } else {
+                router.replace('/(tabs)');
               }
+            } catch (err) {
+              console.error('Google auth error:', err);
+              const msg = err.response?.data?.error || 'Inscription Google échouée.';
+              Alert.alert('Erreur', msg);
+            } finally {
+              setLoading(false);
+            }
           }}
           disabled={loading || !googleAuth.isReady}
           activeOpacity={0.8}
@@ -420,7 +437,7 @@ export default function SignupScreen() {
             <>
               <Ionicons name="logo-google" size={22} color="#666" />
               <Text style={styles.googleButtonText}>
-                Sign up with Google
+                S'inscrire avec Google
               </Text>
             </>
           )}
@@ -434,9 +451,9 @@ export default function SignupScreen() {
           style={styles.linkContainer}
           onPress={() => router.back()}
         >
-          <Text style={[styles.link, { color: colors.textSecondary }]}>
-            Already have an account?{' '}
-            <Text style={{ color: '#FF6B8A', fontWeight: '700' }}>Sign In</Text>
+          <Text style={styles.link}>
+            Déjà un compte ?{' '}
+            <Text style={styles.linkHighlight}>Se connecter</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -447,74 +464,95 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: PALETTE.cream,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.four,
+    paddingHorizontal: 24,
+    paddingVertical: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: Spacing.four,
+    marginBottom: 28,
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   logo: {
-    fontSize: 48,
+    fontSize: 30,
     fontWeight: '800',
+    color: PALETTE.rose,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
-    marginTop: Spacing.one,
+    color: PALETTE.textMid,
     textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 10,
   },
   stepIndicator: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: Spacing.one,
-    marginBottom: Spacing.four,
+    gap: 8,
+    marginBottom: 24,
   },
   stepDot: {
     width: 40,
     height: 4,
     borderRadius: 2,
+    backgroundColor: PALETTE.border,
+  },
+  stepDotActive: {
+    backgroundColor: PALETTE.rose,
   },
   form: {
-    gap: Spacing.two,
+    gap: 12,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: -Spacing.one,
+    color: PALETTE.textDark,
+    marginBottom: -4,
   },
   input: {
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: Spacing.three,
+    height: 54,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
+    paddingHorizontal: 16,
     fontSize: 16,
+    backgroundColor: PALETTE.white,
+    color: PALETTE.textDark,
+    justifyContent: 'center',
   },
   inputError: {
-    borderColor: '#FF4444',
+    borderColor: '#FF6B6B',
   },
   errorText: {
-    color: '#FF4444',
+    color: '#FF6B6B',
     fontSize: 12,
-    marginTop: -Spacing.one,
+    marginTop: -6,
+    marginLeft: 4,
   },
   hint: {
     fontSize: 11,
-    marginTop: -Spacing.one,
+    marginTop: -6,
     fontStyle: 'italic',
-  },
-  dateButton: {
-    justifyContent: 'center',
-    alignItems: 'flex-start',
+    color: PALETTE.textLight,
+    marginLeft: 4,
   },
   dateConfirmButton: {
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#FF6B8A',
+    backgroundColor: PALETTE.rose,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -524,26 +562,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   button: {
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: '#FF6B8A',
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: PALETTE.rose,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.two,
-    shadowColor: '#FF6B8A',
+    flexDirection: 'row',
+    gap: 8,
+    shadowColor: PALETTE.rose,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
   },
   nextButton: {
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: '#FF6B8A',
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: PALETTE.rose,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.two,
-    shadowColor: '#FF6B8A',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    shadowColor: PALETTE.rose,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -551,20 +592,25 @@ const styles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: Spacing.two,
-    marginTop: Spacing.two,
+    gap: 12,
+    marginTop: 8,
   },
   backButton: {
-    height: 54,
-    borderRadius: 14,
-    borderWidth: 1,
+    height: 56,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 20,
+    backgroundColor: PALETTE.white,
   },
   backButtonText: {
     fontSize: 16,
     fontWeight: '600',
+    color: PALETTE.textDark,
   },
   buttonText: {
     color: '#fff',
@@ -573,38 +619,92 @@ const styles = StyleSheet.create({
   },
   linkContainer: {
     alignItems: 'center',
-    marginTop: Spacing.four,
+    marginTop: 16,
   },
   link: {
-    fontSize: 14,
+    fontSize: 15,
+    color: PALETTE.textMid,
+  },
+  linkHighlight: {
+    color: PALETTE.rose,
+    fontWeight: '700',
+  },
+
+  // Photo picker
+  photoPicker: {
+    alignSelf: 'center',
+    position: 'relative',
+    marginVertical: 4,
+  },
+  photoPreview: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: PALETTE.rose,
+  },
+  photoPlaceholder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: PALETTE.roseLight,
+    borderStyle: 'dashed',
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  photoPlaceholderText: {
+    fontSize: 10,
+    color: PALETTE.rose,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  photoEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: PALETTE.rose,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
 
   // Divider
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.three,
-    gap: Spacing.two,
+    marginTop: 16,
+    gap: 12,
   },
   dividerLine: {
     flex: 1,
     height: 1,
+    backgroundColor: PALETTE.border,
   },
   dividerText: {
     fontSize: 14,
     fontWeight: '600',
+    color: PALETTE.textLight,
   },
 
-  // Google button
+  // Google
   googleButton: {
-    height: 54,
-    borderRadius: 14,
+    height: 56,
+    borderRadius: 18,
     borderWidth: 1.5,
+    borderColor: PALETTE.border,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: Spacing.two,
-    marginTop: Spacing.two,
+    gap: 10,
+    backgroundColor: PALETTE.white,
+    marginTop: 8,
   },
   googleButtonText: {
     color: '#666',
@@ -612,9 +712,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   googleError: {
-    color: '#FF4444',
+    color: '#FF6B6B',
     fontSize: 13,
     textAlign: 'center',
-    marginTop: Spacing.one,
+    marginTop: 8,
   },
 });

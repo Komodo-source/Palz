@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,22 +9,30 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Slot, router, useSegments } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getColors, Spacing } from '@/constants/theme';
+import { getColors } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth';
 
 // Always import screen components (they work on all platforms)
-import SwipeScreen from './index';
+import SwipeScreen from './index'; // kept in code but not shown in tab bar
+import EventsScreen from './events';
+import WallScreen from './wall';
+import GroupsScreen from './groups';
 import MessagesScreen from './messages';
 import ProfileScreen from './profile';
 
 const TABS = [
-  { key: 'index', title: 'Discover', icon: 'diamond-outline' },
+  { key: 'wall', title: 'Toile', icon: 'images-outline' },
+  { key: 'events', title: 'Événements', icon: 'calendar-outline' },
+  { key: 'groups', title: 'Groupes', icon: 'people-outline' },
   { key: 'messages', title: 'Messages', icon: 'chatbubbles-outline' },
-  { key: 'profile', title: 'Profile', icon: 'person-outline' },
+  { key: 'profile', title: 'Profil', icon: 'person-outline' },
 ];
 
 function TabBarIcon({ name, focused }) {
   const icons = {
-    index: 'diamond-outline',
+    events: 'calendar-outline',
+    wall: 'images-outline',
+    groups: 'people-outline',
     messages: 'chatbubbles-outline',
     profile: 'person-outline',
   };
@@ -32,7 +40,7 @@ function TabBarIcon({ name, focused }) {
     <Ionicons
       name={icons[name] || 'ellipse'}
       size={focused ? 26 : 24}
-      color={focused ? '#FF6B8A' : '#B0A098'}
+      color={focused ? '#FF8FA3' : '#B0A098'}
     />
   );
 }
@@ -68,8 +76,8 @@ function BottomTabBar({ activeIndex, onTabPress, colors }) {
               style={[
                 styles.tabLabel,
                 {
-                  color: isFocused ? '#FF6B8A' : colors.textSecondary,
-                  fontWeight: isFocused ? '700' : '500',
+              color: isFocused ? '#FF8FA3' : colors.textSecondary,
+              fontWeight: isFocused ? '700' : '500',
                 },
               ]}
             >
@@ -82,84 +90,34 @@ function BottomTabBar({ activeIndex, onTabPress, colors }) {
   );
 }
 
-// ── Native: PagerView Swipeable Layout ──
-function NativeSwipeableLayout({ activeIndex, onPageChange }) {
-  const pagerRef = useRef(null);
-  const currentPageRef = useRef(activeIndex);
-  const [PagerViewComponent, setPagerViewComponent] = useState(null);
-
-  // Lazy-load PagerView (native-only)
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const mod = await import('react-native-pager-view');
-        if (mounted) setPagerViewComponent(() => mod.default);
-      } catch (e) {
-        console.warn('PagerView not available:', e.message);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  // Sync when activeIndex changes from tab press
-  useEffect(() => {
-    if (activeIndex !== currentPageRef.current) {
-      currentPageRef.current = activeIndex;
-      pagerRef.current?.setPage(activeIndex);
-    }
-  }, [activeIndex]);
-
-  const handlePageSelected = useCallback(
-    (e) => {
-      const index = e.nativeEvent.position;
-      currentPageRef.current = index;
-      onPageChange(index);
-    },
-    [onPageChange]
-  );
-
-  if (!PagerViewComponent) {
-    return <FallbackContent activeIndex={activeIndex} />;
-  }
-
-  return (
-    <PagerViewComponent
-      ref={pagerRef}
-      style={styles.pager}
-      initialPage={activeIndex}
-      onPageSelected={handlePageSelected}
-      overdrag={false}
-      pageMargin={0}
-    >
-      <View key="discover" style={styles.page}>
-        <SwipeScreen />
-      </View>
-      <View key="messages" style={styles.page}>
-        <MessagesScreen />
-      </View>
-      <View key="profile" style={styles.page}>
-        <ProfileScreen />
-      </View>
-    </PagerViewComponent>
-  );
-}
-
-// ── Web / Fallback: renders the active screen ──
-function FallbackContent({ activeIndex }) {
-  const screens = [SwipeScreen, MessagesScreen, ProfileScreen];
-  const Active = screens[activeIndex];
-  return Active ? <Active /> : null;
+// ── Renders only the active screen (lazy load — inactive screens never mount) ──
+function ActiveScreen({ activeIndex }) {
+  if (activeIndex === 0) return <WallScreen />;
+  if (activeIndex === 1) return <EventsScreen />;
+  if (activeIndex === 2) return <GroupsScreen />;
+  if (activeIndex === 3) return <MessagesScreen />;
+  if (activeIndex === 4) return <ProfileScreen />;
+  return <EventsScreen />;
 }
 
 // ── Main Layout ──
 export default function TabsLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
   const segments = useSegments();
 
+  // Redirect to login if not authenticated (and not still loading)
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace('/(auth)/login');
+    }
+  }, [isLoading, isAuthenticated]);
+
+  if (isLoading) return null;
+
   // Check if we're on a sub-route (chat, profil) — render as stack (no tabs, no pager)
-  const isSubRoute = segments.includes('chat') || segments.includes('profil');
+  const isSubRoute = segments.includes('chat') || segments.includes('profil') || segments.includes('user') || segments.includes('event');
 
   const getActiveIndexFromPath = useCallback(() => {
     const segment = segments[segments.length - 1];
@@ -187,11 +145,7 @@ export default function TabsLayout() {
     [activeIndex]
   );
 
-  const handlePageChange = useCallback((index) => {
-    setActiveIndex(index);
-    const route = TABS[index].key;
-    router.replace(`/(tabs)/${route}`);
-  }, []);
+  if (!isAuthenticated) return null;
 
   // Sub-routes (chat, profil): render as simple stack (no tab bar, no pager)
   if (isSubRoute) {
@@ -202,19 +156,10 @@ export default function TabsLayout() {
     );
   }
 
-  const isNative = Platform.OS !== 'web';
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Swipeable content */}
-      {isNative ? (
-        <NativeSwipeableLayout
-          activeIndex={activeIndex}
-          onPageChange={handlePageChange}
-        />
-      ) : (
-        <FallbackContent activeIndex={activeIndex} />
-      )}
+      {/* Active screen (no swipe) */}
+      <ActiveScreen activeIndex={activeIndex} />
 
       {/* Bottom Tab Bar */}
       <BottomTabBar
@@ -228,12 +173,6 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  pager: {
-    flex: 1,
-  },
-  page: {
     flex: 1,
   },
   tabBar: {

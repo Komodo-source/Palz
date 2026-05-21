@@ -8,8 +8,6 @@ const LOCAL_HOST = Platform.select({
   default: 'localhost',
 });
 
-// Switch between local dev and production backend
-// Set EXPO_PUBLIC_USE_LOCAL=true in your .env to use localhost
 const USE_LOCAL = process.env.EXPO_PUBLIC_USE_LOCAL === 'true';
 const PROD_HOST = 'https://palz-backend.onrender.com';
 
@@ -20,12 +18,20 @@ const API_BASE = USE_LOCAL
 // Security key for backend DB access — set via env or hardcode for dev
 const API_SECRET_KEY = process.env.EXPO_PUBLIC_API_KEY || 'palz-dev-key-change-in-production';
 
+// Debug mode: set to true to see detailed backend error messages
+const DEBUG_MODE = process.env.EXPO_PUBLIC_DEBUG === 'true';
+
+// Callback for when the API returns 401 (token expired/invalid)
+let onUnauthorized = null;
+export const setOnUnauthorized = (fn) => { onUnauthorized = fn; };
+
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
     'x-api-key': API_SECRET_KEY,
+    ...(DEBUG_MODE ? { 'x-debug': 'true' } : {}),
   },
 });
 
@@ -38,13 +44,21 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Handle 401 responses
+// Handle error responses
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      await storage.removeItem('auth_token');
-      await storage.removeItem('auth_user');
+    if (error.response) {
+      const status = error.response.status;
+      if (status === 401) {
+        await storage.removeItem('auth_token');
+        await storage.removeItem('auth_user');
+        if (onUnauthorized) onUnauthorized();
+      }
+      // Attach a readable message for catch blocks to display
+      error.displayMessage = error.response.data?.error || `Erreur ${status}`;
+    } else {
+      error.displayMessage = 'Erreur réseau — vérifie ta connexion.';
     }
     return Promise.reject(error);
   }
@@ -61,13 +75,31 @@ export const authApi = {
 // ── Users ──
 export const usersApi = {
   discover: () => api.get('/users/discover'),
+  getNumberPhoto: () => api.get('/users/nb_photo'),
+  getNumberRelation: () => api.get('/users/nb_relation'),
   getProfile: (id) => api.get(`/users/${id}`),
   updateProfile: (data) => api.put('/users/profile', data),
 };
 
 // ── Upload ──
-// Helper to get the base URL for direct uploads
-export const getUploadBaseUrl = () => API_BASE;
+// Supabase storage public URL base
+const SUPABASE_BASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://kcglwtoegceicruwmxzo.supabase.co';
+const SUPABASE_STORAGE_URL = `${SUPABASE_BASE_URL}/storage/v1/object/public`;
+
+/**
+ * Get the full public URL for a stored file.
+ * Handles both legacy /uploads/ paths and Supabase storage paths.
+ * Determines the bucket from the filename prefix (img_ → images, audio_ → audio).
+ */
+export const getStorageUrl = (storedValue) => {
+  if (!storedValue) return '';
+  // Already a full URL (e.g. Supabase public URL)
+  if (storedValue.startsWith('http')) return storedValue;
+
+  // Map filename prefixes to actual Supabase bucket names
+  const bucket = storedValue.startsWith('audio_') ? 'audio_users' : 'user_photos';
+  return `${SUPABASE_STORAGE_URL}/${bucket}/${storedValue}`;
+};
 
 export const uploadApi = {
   /**
@@ -150,6 +182,56 @@ export const messagesApi = {
   getConversations: () => api.get('/messages/conversations'),
   getMessages: (conversationId) => api.get(`/messages/${conversationId}`),
   sendMessage: (data) => api.post('/messages/send', data),
+  startConversation: (otherUserId) => api.post('/messages/start', { other_user_id: otherUserId }),
+};
+
+// ── Wall ──
+export const wallApi = {
+  getTheme: () => api.get('/wall/theme'),
+  getPosts: () => api.get('/wall/posts'),
+  createPost: (wallPhoto) => api.post('/wall/post', { wall_photo: wallPhoto }),
+  deletePost: (postId) => api.delete(`/wall/post/${postId}`),
+  reactToPost: (postId) => api.post(`/wall/post/${postId}/react`),
+  getUserPosts: (userId) => api.get(`/wall/user/${userId}/posts`),
+};
+
+// ── Groups ──
+export const groupsApi = {
+  getCurrent: () => api.get('/groups/current'),
+  generate: () => api.post('/groups/generate'),
+  leave: () => api.post('/groups/leave'),
+  vote: (weeklyGroupId, vote) => api.post('/groups/vote', { weekly_group_id: weeklyGroupId, vote }),
+  getMessages: (weeklyGroupId) => api.get(`/groups/${weeklyGroupId}/messages`),
+  sendMessage: (data) => api.post('/groups/message/send', data),
+  setRendezvous: (weeklyGroupId, location, time) =>
+    api.put('/groups/rendezvous', { weekly_group_id: weeklyGroupId, location, time }),
+  submitMemberVotes: (weeklyGroupId, votes) =>
+    api.post('/groups/member-vote', { weekly_group_id: weeklyGroupId, votes }),
+  getMemberVotes: (weeklyGroupId) => api.get(`/groups/${weeklyGroupId}/member-votes`),
+};
+
+// ── Events ──
+export const eventsApi = {
+  getEvents: (filter, category) => api.get('/events', {
+    params: {
+      ...(filter ? { filter } : {}),
+      ...(category ? { category } : {}),
+    },
+  }),
+  createEvent: (data) => api.post('/events', data),
+  getEvent: (id) => api.get(`/events/${id}`),
+  joinEvent: (id) => api.post(`/events/${id}/join`),
+  leaveEvent: (id) => api.post(`/events/${id}/leave`),
+  getMessages: (id) => api.get(`/events/${id}/messages`),
+  sendMessage: (id, content) => api.post(`/events/${id}/messages`, { content }),
+};
+
+// ── Constant Data (zodiac, sports, hobbies) ──
+export const constantDataApi = {
+  getZodiacSigns: () => api.get('/constant_data/get_zodiac_sign'),
+  getSports: () => api.get('/constant_data/get_sports'),
+  getHobbies: () => api.get('/constant_data/get_hobbies'),
+  getTypeSearch: () => api.get('/constant_data/get_type_search'),
 };
 
 export default api;

@@ -13,6 +13,7 @@ import {
   Image,
   Animated,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,28 +28,28 @@ import {
 } from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth';
-import { usersApi, uploadApi, getUploadBaseUrl } from '@/services/api';
+import { usersApi, uploadApi, getStorageUrl, constantDataApi } from '@/services/api';
+import { parseDbJson } from '@/utils/parsers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PHOTO_SIZE = (SCREEN_WIDTH - 48 - 16) / 3; 
+const PHOTO_SIZE = (SCREEN_WIDTH - 48 - 16) / 3;
 
 // ── Helpers ──
 const extractFilename = (url) => {
   if (!url) return '';
+  // Supabase storage URL: https://...supabase.co/storage/v1/object/public/{bucket}/{filename}
+  if (url.includes('/storage/v1/object/public/')) {
+    const parts = url.split('/storage/v1/object/public/');
+    const pathParts = parts[1].split('/');
+    return pathParts.slice(1).join('/'); // skip bucket name
+  }
+  // Legacy: /uploads/ paths
   if (url.includes('/uploads/')) {
     const parts = url.split('/uploads/');
     return parts[parts.length - 1];
   }
   return url;
-};
-
-const getFullUploadUrl = (storedUrl) => {
-  const base = getUploadBaseUrl().replace('/api', '');
-  if (storedUrl.startsWith('http')) return storedUrl;
-  if (storedUrl.startsWith('/uploads/')) return `${base}${storedUrl}`;
-  return `${base}/uploads/${storedUrl}`;
 };
 
 const PALETTE = {
@@ -84,7 +85,15 @@ export default function ProfileEditingScreen() {
   const [bio, setBio] = useState(user?.bio || '');
   const [work, setWork] = useState(user?.work || '');
   const [situation, setSituation] = useState(user?.situation || '');
+  const [location, setLocation] = useState(user?.location || user?.home_location || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [dateOfBirth, setDateOfBirth] = useState(user?.date_of_birth || '');
   const [showSituationPicker, setShowSituationPicker] = useState(false);
+
+  // ── Zodiac ──
+  const [zodiacSigns, setZodiacSigns] = useState([]);
+  const [selectedZodiacId, setSelectedZodiacId] = useState(user?.astrology_sign_id || null);
+  const [showZodiacPicker, setShowZodiacPicker] = useState(false);
 
   // ── Photos ──
   const [photos, setPhotos] = useState([]);
@@ -107,14 +116,64 @@ export default function ProfileEditingScreen() {
   const player = useAudioPlayer(recordedAudioUri || null);
   const playerStatus = useAudioPlayerStatus(player);
 
+  // Stable waveform bar heights — computed once so they don't jump on re-render
+  const waveHeights = useRef([...Array(20)].map(() => Math.random() * 16 + 4)).current;
+
   // ── Save state ──
   const [isSaving, setIsSaving] = useState(false);
   const saveOpacity = useRef(new Animated.Value(0)).current;
 
-  // ── Init ──
+  // Track mounted state to prevent setState after unmount (prevents crashes)
+  const isMounted = useRef(true);
   useEffect(() => {
-    initializePhotos();
-    checkExistingAudio();
+    return () => {
+      isMounted.current = false;
+      // Reset audio mode on unmount to release microphone
+      setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    };
+  }, []);
+
+  // ── Init: sync form state once user data arrives ──
+  const didInitRef = useRef(false);
+
+  useEffect(() => {
+    if (!didInitRef.current && user) {
+      didInitRef.current = true;
+      setBio(user.bio || '');
+      setWork(user.work || '');
+      setSituation(user.situation || '');
+      setLocation(user.location || user.home_location || '');
+      setPhone(user.phone || '');
+      setDateOfBirth(user.date_of_birth || '');
+      if (user.astrology_sign_id) setSelectedZodiacId(user.astrology_sign_id);
+
+      const parsedPhotos = parseDbJson(user.profile_image);
+      if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
+        setPhotos(parsedPhotos.map((url, index) => ({
+          id: `existing_${index}`,
+          uri: getStorageUrl(url),
+          isExisting: true,
+        })));
+      }
+
+      if (user.voice_fun_fact) {
+        setRecordedAudioUri(getStorageUrl(user.voice_fun_fact));
+      }
+
+      if (user.latitude && user.longitude) {
+        setUserLocation({
+          latitude: parseFloat(user.latitude),
+          longitude: parseFloat(user.longitude),
+        });
+      }
+    }
+  }, [user]);
+
+  // Load zodiac signs once
+  useEffect(() => {
+    constantDataApi.getZodiacSigns().then((res) => {
+      setZodiacSigns(res.data?.astrology || []);
+    }).catch(() => {});
   }, []);
 
   // ── Sync isPlayingAudio with player status ──
@@ -129,49 +188,57 @@ export default function ProfileEditingScreen() {
     if (isRecording && !recordingState.isRecording) {
       stopRecording();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingState.isRecording, isRecording]);
 
-  const initializePhotos = () => {
-    if (user?.profile_image && Array.isArray(user.profile_image) && user.profile_image.length > 0) {
-      const existingPhotos = user.profile_image.map((url, index) => ({
-        id: `existing_${index}`,
-        uri: getFullUploadUrl(url),
-        isExisting: true,
-      }));
-      setPhotos(existingPhotos);
-    }
-  };
-
-  const checkExistingAudio = () => {
-    if (user?.voice_fun_fact) {
-      setRecordedAudioUri(getFullUploadUrl(user.voice_fun_fact));
-    }
-  };
-
   // ── Photo picking ──
-  const pickImage = async () => {
-    if (photos.length >= 4) {
-      Alert.alert('Maximum atteint', 'Tu peux ajouter jusqu\'à 4 photos sur ton profil.');
-      return;
+  const launchPicker = async (source) => {
+    let permissionResult;
+    if (source === 'camera') {
+      permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    } else {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     }
 
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert('Permission requise', 'Accorde l\'accès à tes photos pour personnaliser ton profil.');
+      Alert.alert(
+        'Permission requise',
+        source === 'camera'
+          ? 'Accorde l\'accès à l\'appareil photo pour prendre une photo.'
+          : 'Accorde l\'accès à tes photos pour personnaliser ton profil.'
+      );
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const pickerOptions = {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 5],
       quality: 1,
-    });
+    };
+
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync(pickerOptions)
+        : await ImagePicker.launchImageLibraryAsync(pickerOptions);
 
     if (!result.canceled && result.assets?.length > 0) {
       const uri = result.assets[0].uri;
       uploadPhoto(uri);
     }
+  };
+
+  const pickImage = () => {
+    if (photos.length >= 4) {
+      Alert.alert('Maximum atteint', 'Tu peux ajouter jusqu\'à 4 photos sur ton profil.');
+      return;
+    }
+
+    Alert.alert('Ajouter une photo', 'Choisis la source', [
+      { text: 'Appareil photo', onPress: () => launchPicker('camera') },
+      { text: 'Galerie', onPress: () => launchPicker('library') },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   };
 
   const uploadPhoto = async (uri) => {
@@ -185,17 +252,22 @@ export default function ProfileEditingScreen() {
         mimeType,
       });
 
-      setPhotos((prev) => [...prev, {
-        id: `new_${Date.now()}`,
-        uri,
-        uploadedUrl: url,
-        isExisting: false,
-      }]);
+      if (isMounted.current) {
+        setPhotos((prev) => [...prev, {
+          id: `new_${Date.now()}`,
+          uri,
+          uploadedUrl: url,
+          isExisting: false,
+        }]);
+      }
     } catch (err) {
       console.error('Photo upload error:', err);
-      Alert.alert('Oups', 'Impossible d\'uploader la photo. Réessaie !');
+      const message = err?.message?.includes('Not Found') || err?.message?.includes('404')
+        ? 'Le serveur de téléchargement n\'est pas disponible. Réessaie plus tard !'
+        : 'Impossible d\'uploader la photo. Réessaie !';
+      if (isMounted.current) Alert.alert('Oups', message);
     } finally {
-      setIsUploadingPhoto(false);
+      if (isMounted.current) setIsUploadingPhoto(false);
     }
   };
 
@@ -205,33 +277,73 @@ export default function ProfileEditingScreen() {
 
   // ── Location ──
   const getCurrentLocation = useCallback(async () => {
+    if (!isMounted.current) return;
     setIsFetchingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission requise', 'Active la localisation pour partager ta ville.');
-        setIsFetchingLocation(false);
+        if (isMounted.current) {
+          Alert.alert('Permission requise', 'Active la localisation pour partager ta ville.');
+        }
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      let location;
+      try {
+        // Try GPS first
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      } catch (gpsErr) {
+        // Google Play Services error (code 20) or other GPS failures
+        console.warn('GPS failed, trying last known location:', gpsErr.message);
+        try {
+          location = await Location.getLastKnownPositionAsync({ maxAge: 300000 });
+          if (!location && isMounted.current) {
+            Alert.alert(
+              'Localisation indisponible',
+              'Impossible d\'accéder au GPS. Vérifie que les services de localisation sont activés ou réessaie plus tard.'
+            );
+            return;
+          }
+        } catch (lastKnownErr) {
+          console.error('Last known location error:', lastKnownErr);
+          if (isMounted.current) {
+            Alert.alert(
+              'Localisation indisponible',
+              'Les services de localisation ne sont pas disponibles. Vérifie tes paramètres Google Play Services.'
+            );
+          }
+          return;
+        }
+      }
+
+      if (!location || !isMounted.current) return;
 
       const { latitude, longitude } = location.coords;
       setUserLocation({ latitude, longitude });
 
       // Reverse geocode to get city name
-      const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (geocode) {
-        const city = geocode.city || geocode.region || '';
-        Alert.alert('Localisation mise à jour !', city ? `Tu es à ${city}` : 'Position enregistrée.');
+      try {
+        const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (isMounted.current) {
+          const city = geocode?.city || geocode?.region || '';
+          Alert.alert('Localisation mise à jour !', city ? `Tu es à ${city}` : 'Position enregistrée.');
+        }
+      } catch (geoErr) {
+        console.warn('Reverse geocode failed:', geoErr.message);
+        // Location coords are still saved even if city lookup fails
+        if (isMounted.current) {
+          Alert.alert('Position enregistrée !', 'Ta position a bien été mise à jour.');
+        }
       }
     } catch (err) {
       console.error('Location error:', err);
-      Alert.alert('Oups', 'Impossible de récupérer ta position.');
+      if (isMounted.current) {
+        Alert.alert('Oups', 'Impossible de récupérer ta position.');
+      }
     } finally {
-      setIsFetchingLocation(false);
+      if (isMounted.current) setIsFetchingLocation(false);
     }
   }, []);
 
@@ -244,12 +356,10 @@ export default function ProfileEditingScreen() {
         return;
       }
 
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
-      await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
+      // Options were given to useAudioRecorder — no need to pass them again
+      await recorder.prepareToRecordAsync();
       recorder.record({ forDuration: 30 });
 
       setIsRecording(true);
@@ -260,25 +370,33 @@ export default function ProfileEditingScreen() {
   };
 
   const stopRecording = async () => {
+    setIsRecording(false);
+
+    // Stop recorder — ignore errors if it already stopped (e.g. forDuration expired)
     try {
-      setIsRecording(false);
       await recorder.stop();
-      await setAudioModeAsync({
-        allowsRecording: false,
-      });
+    } catch {
+      // Recorder may have auto-stopped after forDuration — that's fine
+    }
 
-      const uri = recorder.uri;
+    try {
+      await setAudioModeAsync({ allowsRecording: false });
+    } catch {}
+
+    // URI is a property on the recorder object, available after stop
+    const uri = recorder.uri;
+    if (!uri) {
+      if (isMounted.current) Alert.alert('Oups', "L'enregistrement a échoué. Réessaie !");
+      return;
+    }
+    if (isMounted.current) {
       setRecordedAudioUri(uri);
-
-      // Auto-upload after recording
-      if (uri) uploadAudio(uri);
-    } catch (err) {
-      console.error('Recording stop error:', err);
-      setIsRecording(false);
+      await uploadAudio(uri);
     }
   };
 
   const uploadAudio = async (uri) => {
+    if (!isMounted.current) return;
     setIsUploadingAudio(true);
     try {
       const { url } = await uploadApi.uploadAudio({
@@ -286,13 +404,17 @@ export default function ProfileEditingScreen() {
         fileName: 'fun_fact.m4a',
         mimeType: 'audio/m4a',
       });
-      setRecordedAudioUri(url);
-      setVoiceFunFactChanged(true);
+      if (isMounted.current) {
+        setRecordedAudioUri(url);
+        setVoiceFunFactChanged(true);
+      }
     } catch (err) {
       console.error('Audio upload error:', err);
-      Alert.alert('Oups', "L'enregistrement est sauvegardé mais n'a pas pu être uploadé.");
+      if (isMounted.current) {
+        Alert.alert('Oups', "L'enregistrement est sauvegardé mais n'a pas pu être uploadé.");
+      }
     } finally {
-      setIsUploadingAudio(false);
+      if (isMounted.current) setIsUploadingAudio(false);
     }
   };
 
@@ -321,9 +443,15 @@ export default function ProfileEditingScreen() {
     try {
       const updateData = {};
 
-      if (bio !== user?.bio) updateData.bio = bio;
-      if (work !== user?.work) updateData.work = work;
-      if (situation !== user?.situation) updateData.situation = situation;
+      if (bio !== (user?.bio || '')) updateData.bio = bio;
+      if (work !== (user?.work || '')) updateData.work = work;
+      if (situation !== (user?.situation || '')) updateData.situation = situation;
+      if (location !== (user?.location || user?.home_location || '')) updateData.location = location;
+      if (phone !== (user?.phone || '')) updateData.phone = phone;
+      if (dateOfBirth !== (user?.date_of_birth || '')) updateData.date_of_birth = dateOfBirth;
+      if (selectedZodiacId && selectedZodiacId !== user?.astrology_sign_id) {
+        updateData.astrology_sign_id = selectedZodiacId;
+      }
 
       // Build profile_image array: all stored as just the filename
       const newPhotoUrls = photos
@@ -347,8 +475,8 @@ export default function ProfileEditingScreen() {
 
       // Location
       if (userLocation) {
-        updateData.latitude = String(userLocation.latitude);
-        updateData.longitude = String(userLocation.longitude);
+        updateData.latitude = userLocation.latitude;
+        updateData.longitude = userLocation.longitude;
       }
 
       if (Object.keys(updateData).length === 0) {
@@ -488,6 +616,56 @@ export default function ProfileEditingScreen() {
           />
         </View>
 
+        {/* ── City Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="home-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Ma ville</Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Ex: Paris, Lyon, Bordeaux..."
+            placeholderTextColor={PALETTE.textLight}
+            value={location}
+            onChangeText={setLocation}
+            maxLength={100}
+          />
+        </View>
+
+        {/* ── Phone Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="call-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Téléphone</Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Ex: +33 6 12 34 56 78"
+            placeholderTextColor={PALETTE.textLight}
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            maxLength={20}
+          />
+        </View>
+
+        {/* ── Date of Birth Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="calendar-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Date de naissance</Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="AAAA-MM-JJ  (ex: 1998-07-15)"
+            placeholderTextColor={PALETTE.textLight}
+            value={dateOfBirth}
+            onChangeText={setDateOfBirth}
+            keyboardType="numeric"
+            maxLength={10}
+          />
+        </View>
+
         {/* ── Situation Section ── */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
@@ -542,6 +720,75 @@ export default function ProfileEditingScreen() {
           )}
         </View>
 
+        {/* ── Zodiac Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="star-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Signe astrologique</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.situationSelector}
+            onPress={() => setShowZodiacPicker(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.situationText,
+              !selectedZodiacId && styles.placeholderText,
+            ]}>
+              {selectedZodiacId
+                ? (zodiacSigns.find((z) => z.id === selectedZodiacId)?.name || 'Signe sélectionné')
+                : 'Choisis ton signe...'}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={PALETTE.rose} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Zodiac picker modal */}
+        <Modal
+          visible={showZodiacPicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowZodiacPicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowZodiacPicker(false)}
+          >
+            <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Choisis ton signe</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {zodiacSigns.map((sign) => (
+                  <TouchableOpacity
+                    key={sign.id}
+                    style={[
+                      styles.zodiacOption,
+                      selectedZodiacId === sign.id && styles.situationOptionSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedZodiacId(sign.id);
+                      setShowZodiacPicker(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      styles.situationOptionText,
+                      selectedZodiacId === sign.id && styles.situationOptionTextSelected,
+                    ]}>
+                      {sign.name}
+                    </Text>
+                    {selectedZodiacId === sign.id && (
+                      <Ionicons name="checkmark" size={16} color={PALETTE.rose} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* ── Location Section ── */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
@@ -589,12 +836,19 @@ export default function ProfileEditingScreen() {
           </Text>
 
           {!user?.is_premium ? (
-            <View style={styles.premiumLock}>
-              <Ionicons name="lock-closed" size={24} color={PALETTE.textMid} />
+            <TouchableOpacity
+              style={styles.premiumLock}
+              onPress={() => router.push('/(tabs)/profil/payement_page')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="star" size={26} color="#7B61A8" />
               <Text style={styles.premiumLockText}>
                 Passe en Premium pour débloquer les fun facts vocales
               </Text>
-            </View>
+              <View style={styles.premiumLockBtn}>
+                <Text style={styles.premiumLockBtnText}>Devenir Premium</Text>
+              </View>
+            </TouchableOpacity>
           ) : (
             <View style={styles.audioSection}>
               {recordedAudioUri ? (
@@ -615,12 +869,12 @@ export default function ProfileEditingScreen() {
                       {isPlayingAudio ? 'En écoute...' : 'Ta fun fact'}
                     </Text>
                     <View style={styles.audioWave}>
-                      {[...Array(20)].map((_, i) => (
+                      {waveHeights.map((h, i) => (
                         <View
                           key={i}
                           style={[
                             styles.waveBar,
-                            { height: Math.random() * 16 + 4 },
+                            { height: h },
                           ]}
                         />
                       ))}
@@ -664,7 +918,7 @@ export default function ProfileEditingScreen() {
               {isUploadingAudio && (
                 <View style={styles.uploadingOverlay}>
                   <ActivityIndicator color={PALETTE.rose} size="small" />
-                  <Text style={styles.uploadingText}>Upload de l'audio...</Text>
+                  <Text style={styles.uploadingText}>Upload de l&apos;audio...</Text>
                 </View>
               )}
             </View>
@@ -693,7 +947,7 @@ export default function ProfileEditingScreen() {
         </Text>
 
         {/* ── Success overlay ── */}
-        <Animated.View style={[styles.successOverlay, { opacity: saveOpacity }]}>
+        <Animated.View style={[styles.successOverlay, { opacity: saveOpacity }]} pointerEvents="none">
           <Ionicons name="flower-outline" size={64} color={PALETTE.rose} />
           <Text style={styles.successText}>Profil mis à jour !</Text>
         </Animated.View>
@@ -1103,6 +1357,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
+  premiumLockBtn: {
+    backgroundColor: '#7B61A8',
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  premiumLockBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   // ── Save ──
   saveButton: {
@@ -1155,5 +1421,47 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: PALETTE.rose,
+  },
+
+  // ── Zodiac modal ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: PALETTE.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: PALETTE.border,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  zodiacOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: PALETTE.rosePale,
+    borderRadius: 12,
+    marginBottom: 2,
   },
 });

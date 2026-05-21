@@ -1,30 +1,19 @@
 /**
- * Compatibility Questionnaire Scoring Utility
+ * Questionnaire de Compatibilité
  *
- * Measures friendship compatibility across 3 dimensions:
- * - social_energy: introvert ↔ extrovert
- * - planning_style: planner ↔ spontaneous
- * - conversation_depth: casual ↔ deep
+ * Mesure la compatibilité amicale sur 3 dimensions :
+ * - social_energy : introverti ↔ extraverti
+ * - planning_style : planifié ↔ spontané
+ * - conversation_depth : léger ↔ profond
  *
- * Scores range from 0–100. The smaller the difference between two
- * users' answers, the higher their compatibility score.
- *
- * This is used to:
- * - Reduce incompatible friendship matches
- * - Compare social energy and communication styles
- * - Avoid matching users with extreme personality differences
+ * Les scores vont de 0 à 100. Plus la différence entre deux
+ * utilisateurs est petite, plus leur compatibilité est élevée.
  */
 
 const QUESTION_KEYS = ['social_energy', 'planning_style', 'conversation_depth'];
-const MAX_DIFF_PER_QUESTION = 9; // 10 − 1
-const MAX_TOTAL_DIFF = MAX_DIFF_PER_QUESTION * QUESTION_KEYS.length; // 27
+const MAX_DIFF_PER_QUESTION = 9;
+const MAX_TOTAL_DIFF = MAX_DIFF_PER_QUESTION * QUESTION_KEYS.length;
 
-/**
- * Calculate compatibility score between two users (0–100).
- * @param {Object} answersA - First user's answers: { social_energy, planning_style, conversation_depth }
- * @param {Object} answersB - Second user's answers: { social_energy, planning_style, conversation_depth }
- * @returns {number} Compatibility percentage (0–100)
- */
 export function calculateCompatibility(answersA, answersB) {
   if (!answersA || !answersB) return 50;
 
@@ -40,64 +29,47 @@ export function calculateCompatibility(answersA, answersB) {
   return Math.max(0, Math.min(100, raw));
 }
 
-/**
- * Get a friendly label for a compatibility score.
- * @param {number} score - Compatibility score (0–100)
- * @returns {string} Label text
- */
 export function getCompatibilityLabel(score) {
-  if (score >= 85) return 'Soul Friends';
-  if (score >= 65) return 'Great Match';
-  if (score >= 45) return 'Could Work';
-  return 'Not Quite';
+  if (score >= 85) return 'Âmes sœurs';
+  if (score >= 65) return 'Super match';
+  if (score >= 45) return 'Ça peut le faire';
+  return 'Pas tout à fait';
 }
 
-/**
- * Get a description for a compatibility score.
- * @param {number} score - Compatibility score (0–100)
- * @returns {string} Short explanation
- */
 export function getCompatibilityDescription(score) {
-  if (score >= 85) return 'You two just get each other!';
-  if (score >= 65) return 'Really good vibes between you.';
-  if (score >= 45) return 'Some differences, but worth exploring.';
-  return 'Pretty different personalities.';
+  if (score >= 85) return 'Vous vous comprenez parfaitement !';
+  if (score >= 65) return 'De très bonnes vibes entre vous.';
+  if (score >= 45) return 'Quelques différences, mais à explorer.';
+  return 'Personnalités assez différentes.';
 }
 
-/**
- * Questions configuration used in the onboarding form.
- * `icon` refers to an Ionicons name from @expo/vector-icons.
- */
 export const COMPATIBILITY_QUESTIONS = [
   {
     id: 'social_energy',
-    title: 'Your Social Battery',
-    question: 'How do you recharge?',
-    lowLabel: 'Need lots of\nalone time',
-    highLabel: 'Could socialize\nall day!',
+    title: 'Énergie Sociale',
+    question: 'Comment tu te recharges ?',
+    lowLabel: 'Besoin de temps seul(e)',
+    highLabel: 'Pourrais sociabiliser toute la journée !',
     icon: 'battery-charging',
   },
   {
     id: 'planning_style',
-    title: 'Planning Style',
-    question: 'Making plans makes me feel…',
-    lowLabel: 'Planned &\nprepared',
-    highLabel: 'Spontaneous\n& free',
+    title: 'Style de Planification',
+    question: 'Faire des plans me fait me sentir…',
+    lowLabel: 'Planifié(e) & prêt(e)',
+    highLabel: 'Spontané(e) & libre',
     icon: 'calendar-outline',
   },
   {
     id: 'conversation_depth',
-    title: 'Conversation Vibe',
-    question: 'I love conversations\nthat are…',
-    lowLabel: 'Light &\nbreezy',
-    highLabel: 'Deep &\nmeaningful',
+    title: 'Style de Conversation',
+    question: 'J\'adore les conversations…',
+    lowLabel: 'Légères & insouciantes',
+    highLabel: 'Profondes & pleines de sens',
     icon: 'chatbubbles-outline',
   },
 ];
 
-/**
- * Get the default (midpoint) answers object.
- */
 export function getDefaultAnswers() {
   return {
     social_energy: 5,

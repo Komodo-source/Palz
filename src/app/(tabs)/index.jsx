@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
+  ScrollView,
 } from 'react-native';
+import { router } from 'expo-router';
 import { usersApi, swipesApi } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Spacing, getColors } from '@/constants/theme';
+import { Spacing, getColors, PALETTE } from '@/constants/theme';
+import { getProfileImages, parseUserInterests, parseDbJson } from '@/utils/parsers';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -22,10 +25,11 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - Spacing.four * 2;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.55;
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3;
 const ROTATION_FACTOR = 15;
 
@@ -39,8 +43,109 @@ function calculateAge(dateStr) {
   return age;
 }
 
-// Card component with gesture handling
+const ZODIAC_ICONS = {
+  'Bélier': 'flame',
+  'Taureau': 'leaf',
+  'Gémeaux': 'infinite',
+  'Cancer': 'water',
+  'Lion': 'sunny',
+  'Vierge': 'sparkles',
+  'Balance': 'scale',
+  'Scorpion': 'skull',
+  'Sagittaire': 'arrow-forward',
+  'Capricorne': 'mountain',
+  'Verseau': 'rainy',
+  'Poissons': 'fish',
+};
+
+function getZodiacIcon(name) {
+  return ZODIAC_ICONS[name] || 'star';
+}
+
+
+// ── Photo Gallery component (swipe between photos) ──
+function PhotoGallery({ images, onTap }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const photos = (images && Array.isArray(images) && images.length > 0)
+    ? images
+    : null;
+
+  if (!photos || photos.length === 0) {
+    return (
+      <TouchableOpacity style={styles.imageContainer} onPress={onTap} activeOpacity={1}>
+        <View style={[styles.imagePlaceholder, { backgroundColor: PALETTE.rosePale }]}>
+          <Text style={styles.placeholderEmoji}>🌸</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={styles.imageContainer}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_WIDTH);
+          setActiveIndex(idx);
+        }}
+        scrollEventThrottle={16}
+      >
+        {photos.map((uri, i) => (
+          <TouchableOpacity key={i} onPress={onTap} activeOpacity={1}>
+            <Image source={{ uri }} style={styles.image} />
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Photo dots */}
+      {photos.length > 1 && (
+        <View style={styles.photoDots}>
+          {photos.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.photoDot,
+                { backgroundColor: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.4)' },
+              ]}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Animated card wrapper (smooth position transitions when cards are dismissed) ──
+function AnimatedCardWrapper({ stackIndex, children }) {
+  const scale = useSharedValue(1 - stackIndex * 0.03);
+  const offsetY = useSharedValue(stackIndex * 6);
+
+  useEffect(() => {
+    scale.value = withTiming(1 - stackIndex * 0.03, { duration: 350 });
+    offsetY.value = withTiming(stackIndex * 6, { duration: 350 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stackIndex]);
+
+  const animatedWrapperStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    marginTop: offsetY.value,
+  }));
+
+  return (
+    <Animated.View
+      style={[styles.cardWrapper, { zIndex: -stackIndex }, animatedWrapperStyle]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+// ── Card component with gesture handling ──
 function SwipeCard({ user, onSwipe, isTop }) {
+  console.log("showed user: ", user);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const rotation = useSharedValue(0);
@@ -48,6 +153,7 @@ function SwipeCard({ user, onSwipe, isTop }) {
 
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const interests = parseUserInterests(user);
 
   const panGesture = Gesture.Pan()
     .enabled(isTop)
@@ -101,11 +207,30 @@ function SwipeCard({ user, onSwipe, isTop }) {
     ),
   }));
 
-  // Get first profile image or placeholder
-  const profilePic =
-    user.profile_image && Array.isArray(user.profile_image) && user.profile_image.length > 0
-      ? user.profile_image[0]
-      : null;
+  const photos = getProfileImages(user);
+
+  const handleProfilePress = () => {
+    if (user.id) {
+      router.push(`/(tabs)/user/${user.id}`);
+    }
+  };
+
+  const sports = Array.isArray(user.sports) ? user.sports : (parseDbJson(user.sports) || []);
+  const hobbies = Array.isArray(user.hobbies) ? user.hobbies : (parseDbJson(user.hobbies) || []);
+
+  const metaTags = [
+    ...(user.astrology_title ? [{ label: user.astrology_title, type: 'meta', icon: getZodiacIcon(user.astrology_title) }] : []),
+    ...(user.situation ? [{ label: user.situation, type: 'meta', icon: 'heart-outline' }] : []),
+  ].filter((t) => t.label);
+  const sportTags = sports.slice(0, 2).map((s) => ({ label: s, type: 'sport', icon: 'barbell-outline' }));
+  const hobbyTags = hobbies.slice(0, 2).map((h) => ({ label: h, type: 'hobby', icon: 'color-palette-outline' }));
+  const allTags = [...metaTags, ...sportTags, ...hobbyTags].slice(0, 6);
+
+  const tagStyle = (type) => {
+    if (type === 'sport') return { bg: '#EDE9FE', text: '#6D28D9', icon: '#6D28D9' };
+    if (type === 'hobby') return { bg: '#FFF0F3', text: '#CC3D5E', icon: PALETTE.rose };
+    return { bg: '#F3F4F6', text: PALETTE.textDark, icon: PALETTE.textMid };
+  };
 
   return (
     <GestureDetector gesture={panGesture}>
@@ -114,47 +239,80 @@ function SwipeCard({ user, onSwipe, isTop }) {
           styles.card,
           {
             backgroundColor: colors.backgroundElement,
-            shadowColor: colors.text,
+            shadowColor: PALETTE.shadow,
           },
           animatedStyle,
         ]}
       >
-        {/* Image area */}
-        <View style={styles.imageContainer}>
-          {profilePic ? (
-            <Image source={{ uri: profilePic }} style={styles.image} />
-          ) : (
-            <View style={[styles.imagePlaceholder, { backgroundColor: colors.backgroundSelected }]}>
-              <Text style={styles.placeholderEmoji}>🌸</Text>
-            </View>
-          )}
+        {/* Image area with photo gallery */}
+        <PhotoGallery images={photos} onTap={handleProfilePress} />
 
-          {/* LIKE / NOPE overlays */}
-          <Animated.View style={[styles.stamp, styles.likeStamp, likeOpacity]}>
-            <Text style={styles.stampText}>LIKE</Text>
-          </Animated.View>
-          <Animated.View style={[styles.stamp, styles.nopeStamp, nopeOpacity]}>
-            <Text style={styles.stampText}>NOPE</Text>
-          </Animated.View>
+        {/* LIKE / NOPE overlays */}
+        <Animated.View style={[styles.stamp, styles.likeStamp, likeOpacity]}>
+          <Text style={styles.stampText}>J'aime</Text>
+        </Animated.View>
+        <Animated.View style={[styles.stamp, styles.nopeStamp, nopeOpacity]}>
+          <Text style={styles.stampText}>Non</Text>
+        </Animated.View>
 
-          {/* Gradient overlay at bottom */}
-          <View style={styles.gradientOverlay}>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>
-                {user.full_name || user.user_name},{' '}
-                {user.date_of_birth ? calculateAge(user.date_of_birth) : '?'}
+        {/* Info section below image */}
+        <TouchableOpacity onPress={handleProfilePress} activeOpacity={0.9}>
+          <View style={styles.infoSection}>
+            {/* Name + age */}
+            <View style={styles.nameRow}>
+              <Text style={[styles.infoName, { color: colors.text }]} numberOfLines={1}>
+                {user.full_name || user.user_name}
               </Text>
-              {user.location ? (
-                <Text style={styles.userLocation}>📍 {user.location}</Text>
-              ) : null}
-              {user.bio ? (
-                <Text style={styles.userBio} numberOfLines={2}>
-                  {user.bio}
-                </Text>
-              ) : null}
+              <Text style={[styles.infoAge, { color: colors.textSecondary }]}>
+                , {user.date_of_birth ? calculateAge(user.date_of_birth) : '?'}
+              </Text>
             </View>
+
+            {/* Location */}
+            {user.location ? (
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+                <Text style={[styles.infoLocText, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {user.location}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Color-coded vibe chips */}
+            {allTags.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tagsRow}
+                contentContainerStyle={styles.tagsContent}
+              >
+                {allTags.map((tag, i) => {
+                  const ts = tagStyle(tag.type);
+                  return (
+                    <View key={i} style={[styles.tag, { backgroundColor: ts.bg }]}>
+                      <Ionicons name={tag.icon} size={11} color={ts.icon} />
+                      <Text style={[styles.tagText, { color: ts.text }]}>{tag.label}</Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Mini photo grid — peek at all photos */}
+            {photos && photos.length > 1 && (
+              <View style={styles.miniGrid}>
+                {photos.slice(0, 3).map((uri, i) => (
+                  <Image key={i} source={{ uri }} style={styles.miniPhoto} />
+                ))}
+                {photos.length > 3 && (
+                  <View style={styles.miniMore}>
+                    <Text style={styles.miniMoreText}>+{photos.length - 3}</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Action buttons */}
         <View style={styles.actionRow}>
@@ -167,7 +325,15 @@ function SwipeCard({ user, onSwipe, isTop }) {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionEmoji}>✕</Text>
+            <Ionicons name="close" size={24} color={PALETTE.error} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.superBtn]}
+            onPress={handleProfilePress}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="information-circle" size={24} color={PALETTE.textDark} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -179,7 +345,7 @@ function SwipeCard({ user, onSwipe, isTop }) {
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionEmoji}>♥</Text>
+            <Ionicons name="heart" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -194,13 +360,18 @@ export default function SwipeScreen() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // IDs of cards currently animating out (fly-off + next-card transition)
+  const [dismissingIds, setDismissingIds] = useState(new Set());
+  // Ref to track latest users for the timeout callback
+  const usersRef = useRef(users);
+  usersRef.current = users;
 
   const fetchUsers = useCallback(async () => {
     try {
       const res = await usersApi.discover();
-      setUsers(res.data.users);
+      setUsers(res.data?.users ?? []);
     } catch (err) {
-      console.error('Discover error:', err);
+      console.error('Discover error:', err.response?.data || err.message, '| status:', err.response?.status, '| url:', err.config?.url);
       if (err.response?.status !== 401) {
         Alert.alert('Error', 'Failed to load profiles. Pull to refresh.');
       }
@@ -216,28 +387,52 @@ export default function SwipeScreen() {
 
   const handleSwipe = useCallback(
     async (targetId, direction) => {
-      // Remove from local state immediately for smooth animation
-      setUsers((prev) => prev.filter((u) => u.id !== targetId));
+      const currentUsers = usersRef.current;
+
+      // Mark as dismissing — keeps card in DOM for fly-off + transition animations
+      setDismissingIds((prev) => new Set([...prev, targetId]));
 
       try {
         const res = await swipesApi.swipe(targetId, direction);
 
-        if (res.data.matched) {
-          Alert.alert("🎉 It's a Match!", 'You can now chat with each other!', [
-            { text: 'Cool!', style: 'default' },
+        if (res.data?.matched) {
+          Alert.alert('🎉 C\'est un Match !', 'Vous pouvez maintenant discuter !', [
+            { text: 'Discuter', onPress: () => router.push('/(tabs)/messages'), style: 'default' },
+            { text: 'Continuer', style: 'cancel' },
           ]);
-        }
-
-        // Fetch more if running low
-        if (users.length <= 3) {
-          const more = await usersApi.discover();
-          setUsers((prev) => [...prev, ...more.data.users]);
         }
       } catch (err) {
         console.error('Swipe error:', err);
       }
+
+      // After fly-off + position transition completes, actually remove the card
+      setTimeout(() => {
+        setUsers((prev) => prev.filter((u) => u.id !== targetId));
+        setDismissingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(targetId);
+          return next;
+        });
+
+        // Fetch more if running low
+        if (currentUsers.length <= 3) {
+          usersApi.discover().then((more) => {
+            setUsers((prev) => {
+              const existingIds = new Set(prev.map((u) => u.id));
+              const newUsers = (more.data?.users ?? []).filter((u) => !existingIds.has(u.id));
+              return [...prev, ...newUsers];
+            });
+          }).catch(() => {});
+        }
+      }, 500);
     },
-    [users.length]
+    []
+  );
+
+  // Cards visible after removing dismissed ones (for computing stack positions)
+  const visibleUsers = useMemo(
+    () => users.filter((u) => !dismissingIds.has(u.id)),
+    [users, dismissingIds]
   );
 
   const handleRefresh = () => {
@@ -248,9 +443,9 @@ export default function SwipeScreen() {
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#FF6B8A" />
+        <ActivityIndicator size="large" color={PALETTE.rose} />
         <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Finding people near you...
+          On cherche des amis près de toi...
         </Text>
       </View>
     );
@@ -260,11 +455,12 @@ export default function SwipeScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Discover</Text>
-        <TouchableOpacity onPress={handleRefresh} activeOpacity={0.7}>
-          <Text style={[styles.refreshBtn, { color: '#FF6B8A' }]}>
-            {refreshing ? '⟳' : '↻'}
-          </Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>Découvrir</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Fais glisser pour rencontrer</Text>
+        </View>
+        <TouchableOpacity style={styles.refreshCircle} onPress={handleRefresh} activeOpacity={0.7}>
+          <Ionicons name="refresh" size={22} color={PALETTE.rose} />
         </TouchableOpacity>
       </View>
 
@@ -274,42 +470,45 @@ export default function SwipeScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🔍</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No more profiles nearby.{'\n'}Check back later!
+              Plus de profils pour le moment.{'\n'}Repasse plus tard !
             </Text>
             <TouchableOpacity
               style={styles.refreshButton}
               onPress={handleRefresh}
               activeOpacity={0.8}
             >
-              <Text style={styles.refreshButtonText}>Refresh</Text>
+              <Text style={styles.refreshButtonText}>Rafraîchir</Text>
             </TouchableOpacity>
           </View>
         ) : (
           users
             .slice(0, 5)
             .reverse()
-            .map((user, index) => {
-              const isTop = index === Math.min(users.length - 1, 4);
+            .map((user, visualIndex) => {
+              const displayCount = Math.min(users.length, 5);
+              const isDismissing = dismissingIds.has(user.id);
+
+              // Compute the target stack index (0 = top card)
+              let stackIndex;
+              if (isDismissing) {
+                // Keep its pre-dismiss position during fly-off animation
+                stackIndex = displayCount - 1 - visualIndex;
+              } else {
+                // New position based on visible (non-dismissing) order
+                stackIndex = visibleUsers.indexOf(user);
+              }
+
+              // Only the new top card (first visible) is interactive
+              const isTop = !isDismissing && stackIndex === 0;
+
               return (
-                <View
-                  key={user.id}
-                  style={[
-                    styles.cardWrapper,
-                    {
-                      zIndex: -index,
-                      transform: [
-                        { scale: 1 - (Math.min(users.length - 1, 4) - index) * 0.03 },
-                      ],
-                      marginTop: (Math.min(users.length - 1, 4) - index) * 6,
-                    },
-                  ]}
-                >
+                <AnimatedCardWrapper key={user.id} stackIndex={stackIndex}>
                   <SwipeCard
                     user={user}
                     onSwipe={(dir) => handleSwipe(user.id, dir)}
                     isTop={isTop}
                   />
-                </View>
+                </AnimatedCardWrapper>
               );
             })
         )}
@@ -372,7 +571,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   image: {
-    width: '100%',
+    width: CARD_WIDTH,
     height: '100%',
   },
   imagePlaceholder: {
@@ -383,34 +582,50 @@ const styles = StyleSheet.create({
   placeholderEmoji: {
     fontSize: 80,
   },
-  gradientOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: Spacing.four,
-    paddingBottom: Spacing.four,
-    paddingTop: Spacing.six + Spacing.two,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  // Info section below photo
+  infoSection: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 4,
   },
-  userInfo: {
-    gap: Spacing.half,
+  nameRow: { flexDirection: 'row', alignItems: 'baseline', gap: 0 },
+  infoName: { fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
+  infoAge: { fontSize: 17, fontWeight: '500' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
+  infoLocText: { fontSize: 12, flex: 1 },
+  tagsRow: { marginTop: 4 },
+  tagsContent: { gap: 6, paddingRight: 8 },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
-  userName: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#fff',
+  tagText: { fontSize: 11, fontWeight: '700' },
+  // Mini photo grid
+  miniGrid: {
+    flexDirection: 'row',
+    gap: 5,
+    marginTop: 8,
   },
-  userLocation: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.85)',
+  miniPhoto: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: PALETTE.rosePale,
   },
-  userBio: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.75)',
-    lineHeight: 20,
-    marginTop: Spacing.half,
+  miniMore: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  miniMoreText: { fontSize: 11, fontWeight: '700', color: PALETTE.rose },
   stamp: {
     position: 'absolute',
     top: 40,
@@ -421,18 +636,18 @@ const styles = StyleSheet.create({
   },
   likeStamp: {
     right: 30,
-    borderColor: '#4CD964',
+    borderColor: '#FF8FA3',
     transform: [{ rotate: '-20deg' }],
   },
   nopeStamp: {
     left: 30,
-    borderColor: '#FF3B30',
+    borderColor: '#FF8FA3',
     transform: [{ rotate: '20deg' }],
   },
   stampText: {
     fontSize: 32,
     fontWeight: '900',
-    color: '#4CD964',
+    color: '#FF8FA3',
   },
   actionRow: {
     flexDirection: 'row',
@@ -456,12 +671,12 @@ const styles = StyleSheet.create({
   nopeBtn: {
     backgroundColor: '#fff',
     borderWidth: 2,
-    borderColor: '#FF3B30',
-    shadowColor: '#FF3B30',
+    borderColor: '#FF8FA3',
+    shadowColor: '#FF8FA3',
   },
   likeBtn: {
-    backgroundColor: '#4CD964',
-    shadowColor: '#4CD964',
+    backgroundColor: '#FF8FA3',
+    shadowColor: '#FF8FA3',
   },
   actionEmoji: {
     fontSize: 22,
