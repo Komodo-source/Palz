@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { groupsApi, messagesApi } from '@/services/api';
+import { groupsApi, messagesApi, uploadApi, getStorageUrl } from '@/services/api';
+import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -38,6 +39,92 @@ function formatTime(dateStr) {
   });
 }
 
+const GV_WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+
+function GroupVoiceBubble({ uri, isMine, colors, isDark, time }) {
+  const player = useAudioPlayer(uri ? { uri } : null);
+  const status = useAudioPlayerStatus(player);
+  const isPlaying = status?.playing ?? false;
+  const duration = status?.duration ?? 0;
+  const position = status?.currentTime ?? 0;
+  const progress = duration > 0 ? position / duration : 0;
+
+  const fmtDur = (secs) => {
+    const s = Math.floor(secs ?? 0);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  const toggle = () => { if (isPlaying) player.pause(); else player.play(); };
+  const activeColor = isMine ? '#fff' : PALETTE.rose;
+  const inactiveColor = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
+
+  return (
+    <View style={[
+      gvStyles.wrap,
+      isMine ? { backgroundColor: PALETTE.rose } : { backgroundColor: isDark ? '#3D332E' : '#F5EDEA' },
+    ]}>
+      <TouchableOpacity
+        onPress={toggle}
+        style={[gvStyles.playBtn, { backgroundColor: isMine ? 'rgba(255,255,255,0.22)' : PALETTE.rosePale }]}
+        activeOpacity={0.7}
+      >
+        <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={isMine ? '#fff' : PALETTE.rose} />
+      </TouchableOpacity>
+
+      <View style={gvStyles.mid}>
+        <View style={gvStyles.waveform}>
+          {GV_WAVEFORM.map((h, i) => (
+            <View
+              key={i}
+              style={[
+                gvStyles.bar,
+                {
+                  height: h,
+                  backgroundColor: i / GV_WAVEFORM.length <= progress ? activeColor : inactiveColor,
+                },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[gvStyles.dur, { color: isMine ? 'rgba(255,255,255,0.75)' : colors.textSecondary }]}>
+          {fmtDur(position > 0 ? position : duration)}
+        </Text>
+      </View>
+
+      <Text style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.65)' : colors.textSecondary, flexShrink: 0 }}>
+        {time}
+      </Text>
+    </View>
+  );
+}
+
+const gvStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+    minWidth: 190,
+    maxWidth: '80%',
+  },
+  playBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  mid: { flex: 1, gap: 5 },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2.5,
+    height: 20,
+  },
+  bar: { width: 3, borderRadius: 2 },
+  dur: { fontSize: 10, fontWeight: '600' },
+});
+
 export default function GroupsScreen() {
   const { user: currentUser } = useAuth();
   const colorScheme = useColorScheme();
@@ -57,6 +144,22 @@ export default function GroupsScreen() {
   const [memberVotes, setMemberVotes] = useState({}); // { [memberId]: true | false }
   const [submittingMemberVotes, setSubmittingMemberVotes] = useState(false);
   const [openingDm, setOpeningDm] = useState(null); // memberId being loaded
+  const [votingActivity, setVotingActivity] = useState(null); // index being voted
+  const isDark = colorScheme === 'dark';
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [uploadingVoice, setUploadingVoice] = useState(false);
+  const recordTimerRef = useRef(null);
+
+  // Dissolution feedback form
+  const [dissolutionModal, setDissolutionModal] = useState(false);
+  const [dissStep, setDissStep] = useState(0); // 0=group rating, 1=member ratings
+  const [groupRating, setGroupRating] = useState(0);
+  const [memberRatings, setMemberRatings] = useState({}); // { [memberId]: { dim: 0|1|null } }
+  const [pendingDissGroupId, setPendingDissGroupId] = useState(null);
+  const [pendingMembers, setPendingMembers] = useState([]);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const flatListRef = useRef(null);
   const pollInterval = useRef(null);
 
@@ -144,10 +247,13 @@ export default function GroupsScreen() {
         if (res.data.group_continues) {
           Alert.alert('✅ Le groupe continue !', 'Une nouvelle semaine commence.');
         } else {
-          Alert.alert('👋 Groupe dissous', 'Le groupe a été dissous suite au vote.');
-          setGroup(null);
-          setShowChat(false);
-          setMessages([]);
+          // Show dissolution feedback form before clearing the group
+          setPendingDissGroupId(group.id);
+          setPendingMembers(group.members || []);
+          setGroupRating(0);
+          setMemberRatings({});
+          setDissStep(0);
+          setDissolutionModal(true);
         }
       }
     } catch (err) {
@@ -176,6 +282,65 @@ export default function GroupsScreen() {
       setInputText(text);
     } finally {
       setSending(false);
+    }
+  };
+
+  const startGroupRecording = async () => {
+    const { granted } = await requestRecordingPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permission requise', "Autorise l'accès au micro pour enregistrer des messages vocaux.");
+      return;
+    }
+    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    setIsRecordingVoice(true);
+    recordTimerRef.current = setTimeout(() => stopGroupRecording(), 60000);
+  };
+
+  const stopGroupRecording = async () => {
+    if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
+    setIsRecordingVoice(false);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const uri = recorder.uri;
+      if (uri) await sendGroupVoiceMessage(uri);
+    } catch (err) {
+      console.error('Stop group recording error:', err);
+    }
+  };
+
+  const cancelGroupRecording = async () => {
+    if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
+    setIsRecordingVoice(false);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    } catch (_) {}
+  };
+
+  const sendGroupVoiceMessage = async (uri) => {
+    if (!group?.id || uploadingVoice) return;
+    setUploadingVoice(true);
+    try {
+      const { url } = await uploadApi.uploadAudio({
+        uri,
+        fileName: `voice_${Date.now()}.m4a`,
+        mimeType: 'audio/m4a',
+      });
+      await groupsApi.sendMessage({
+        weekly_group_id: group.id,
+        content: '',
+        message_type: 'voice',
+        media_url: url,
+      });
+      await fetchMessages();
+    } catch (err) {
+      console.error('Group voice send error:', err);
+      Alert.alert('Erreur', "Le message vocal n'a pas pu être envoyé.");
+    } finally {
+      setUploadingVoice(false);
     }
   };
 
@@ -227,6 +392,41 @@ export default function GroupsScreen() {
     }
   };
 
+  const handleVoteActivity = async (index) => {
+    if (votingActivity !== null || !group?.id) return;
+    setVotingActivity(index);
+
+    const wasVoted = group.activity_votes?.my_votes?.includes(index);
+    // Optimistic update
+    setGroup((prev) => {
+      const prevVotes = prev.activity_votes || { counts: {}, my_votes: [] };
+      const myVotes = wasVoted
+        ? prevVotes.my_votes.filter((i) => i !== index)
+        : [...prevVotes.my_votes, index];
+      const counts = { ...prevVotes.counts };
+      counts[index] = Math.max(0, (counts[index] || 0) + (wasVoted ? -1 : 1));
+      return { ...prev, activity_votes: { ...prevVotes, counts, my_votes: myVotes } };
+    });
+
+    try {
+      await groupsApi.voteActivity(group.id, index);
+    } catch (err) {
+      // Rollback optimistic update
+      setGroup((prev) => {
+        const prevVotes = prev.activity_votes || { counts: {}, my_votes: [] };
+        const myVotes = wasVoted
+          ? [...prevVotes.my_votes, index]
+          : prevVotes.my_votes.filter((i) => i !== index);
+        const counts = { ...prevVotes.counts };
+        counts[index] = Math.max(0, (counts[index] || 0) + (wasVoted ? 1 : -1));
+        return { ...prev, activity_votes: { ...prevVotes, counts, my_votes: myVotes } };
+      });
+      console.error('Activity vote error:', err);
+    } finally {
+      setVotingActivity(null);
+    }
+  };
+
   const handleOpenDm = async (memberId) => {
     if (openingDm) return;
     setOpeningDm(memberId);
@@ -253,6 +453,236 @@ export default function GroupsScreen() {
     }
   };
 
+  const setMemberDimension = (memberId, dimension, value) => {
+    setMemberRatings((prev) => ({
+      ...prev,
+      [memberId]: {
+        spontaneous_vs_planner: null,
+        sporty_vs_chill: null,
+        party_vs_coffee: null,
+        deep_vs_casual: null,
+        group_role: null,
+        ...(prev[memberId] || {}),
+        [dimension]: value,
+      },
+    }));
+  };
+
+  const finalizeDissolution = () => {
+    setDissolutionModal(false);
+    setGroup(null);
+    setShowChat(false);
+    setMessages([]);
+    setPendingDissGroupId(null);
+    setPendingMembers([]);
+  };
+
+  const handleSubmitDissolution = async () => {
+    if (submittingFeedback) return;
+    setSubmittingFeedback(true);
+    try {
+      const ratings = Object.entries(memberRatings)
+        .filter(([, r]) => Object.values(r).some((v) => v !== null))
+        .map(([member_id, r]) => ({ member_id, ...r }));
+      await groupsApi.submitDissolutionFeedback(
+        pendingDissGroupId,
+        groupRating > 0 ? groupRating : null,
+        ratings
+      );
+    } catch (err) {
+      console.error('Dissolution feedback error:', err);
+    } finally {
+      setSubmittingFeedback(false);
+      finalizeDissolution();
+    }
+  };
+
+  const GROUP_ICE_BREAKERS = [
+    'Si tu devais décrire notre groupe en 3 emojis ?',
+    'Le dernier endroit qui t\'a vraiment surprise ?',
+    'Ton rituel du dimanche matin ?',
+    'Ce qui te fait sourire même les mauvais jours ?',
+    'Si on se retrouvait cette semaine, tu proposerais quoi ?',
+    'Ton film ou série du moment ?',
+    'La ville de tes rêves pour une escapade ?',
+    'Ce qui te rend unique dans un groupe d\'amies ?',
+  ];
+
+  const daysSinceCreated = useMemo(() => {
+    if (!group?.created_at) return 99;
+    return Math.floor((Date.now() - new Date(group.created_at)) / (24 * 60 * 60 * 1000));
+  }, [group?.created_at]);
+
+  const revealLevel = Math.min(daysSinceCreated, 2);
+
+  const isEndOfWeek = useMemo(() => {
+    if (!group?.week_end) return false;
+    const weekEnd = new Date(group.week_end);
+    const showFrom = new Date(weekEnd.getTime() - 2 * 24 * 60 * 60 * 1000);
+    return Date.now() >= showFrom.getTime();
+  }, [group?.week_end]);
+
+  const daysUntilVote = useMemo(() => {
+    if (!group?.week_end || isEndOfWeek) return null;
+    const weekEnd = new Date(group.week_end);
+    const showFrom = new Date(weekEnd.getTime() - 2 * 24 * 60 * 60 * 1000);
+    return Math.ceil((showFrom.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  }, [group?.week_end, isEndOfWeek]);
+
+  const DIMENSIONS = [
+    { key: 'party_vs_coffee',        emoji: '⚡', label: 'Énergie sociale',      question: 'Son énergie sociale ?',           left: 'Extravertie',    right: 'Introvertie'    },
+    { key: 'spontaneous_vs_planner', emoji: '📅', label: 'Planning',              question: 'Son rapport au planning ?',        left: 'Spontanée',      right: 'Planificatrice' },
+    { key: 'sporty_vs_chill',        emoji: '🏃', label: "Style d'activités",     question: 'Ses activités préférées ?',        left: 'Active & sport', right: 'Chill'          },
+    { key: 'deep_vs_casual',         emoji: '💬', label: 'Conversations',         question: 'Son style de conversation ?',      left: 'Deep talks',     right: 'Légèreté'       },
+    { key: 'group_role',             emoji: '🌟', label: 'Rôle dans le groupe',   question: 'Son rôle dans le groupe ?',        left: 'Meneuse',        right: 'Soutien'        },
+  ];
+
+  const renderDissolutionModal = () => {
+    const otherMembers = pendingMembers.filter((m) => m.id !== currentUser?.id);
+
+    return (
+      <Modal
+        visible={dissolutionModal}
+        transparent
+        animationType="slide"
+        onRequestClose={finalizeDissolution}
+      >
+        <View style={dissStyles.overlay}>
+          <View style={[dissStyles.sheet, { backgroundColor: colors.background }]}>
+
+            {dissStep === 0 ? (
+              /* ── Step 1: Group rating ── */
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dissStyles.stepContent}>
+                <View style={dissStyles.emojiWrap}>
+                  <Text style={dissStyles.emoji}>🎉</Text>
+                </View>
+                <Text style={[dissStyles.sheetTitle, { color: colors.text }]}>Bilan du groupe</Text>
+                <Text style={[dissStyles.sheetSub, { color: colors.textSecondary }]}>
+                  Comment s'est passée votre activité ensemble ?
+                </Text>
+
+                <View style={dissStyles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity key={star} onPress={() => setGroupRating(star)} activeOpacity={0.7}>
+                      <Text style={[dissStyles.star, { opacity: star <= groupRating ? 1 : 0.25 }]}>⭐</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={dissStyles.stepBtns}>
+                  <TouchableOpacity style={dissStyles.skipBtn} onPress={finalizeDissolution} activeOpacity={0.7}>
+                    <Text style={[dissStyles.skipBtnText, { color: colors.textSecondary }]}>Passer</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[dissStyles.nextBtn, { opacity: otherMembers.length === 0 ? 0.6 : 1 }]}
+                    onPress={() => setDissStep(1)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={dissStyles.nextBtnText}>Continuer →</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            ) : (
+              /* ── Step 2: Member personality ratings ── */
+              <>
+                <View style={dissStyles.step2Header}>
+                  <TouchableOpacity onPress={() => setDissStep(0)} activeOpacity={0.7}>
+                    <Ionicons name="chevron-back" size={22} color={colors.text} />
+                  </TouchableOpacity>
+                  <Text style={[dissStyles.sheetTitle, { color: colors.text, marginBottom: 0 }]}>Évalue tes Palz</Text>
+                  <View style={{ width: 22 }} />
+                </View>
+                <Text style={[dissStyles.sheetSub, { color: colors.textSecondary, paddingHorizontal: Spacing.four, marginBottom: 8 }]}>
+                  Comment tu les percevrais ?
+                </Text>
+
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dissStyles.membersList}>
+                  {otherMembers.map((member) => {
+                    const pic = Array.isArray(parseDbJson(member.profile_image))
+                      ? parseDbJson(member.profile_image)[0]
+                      : null;
+                    const ratings = memberRatings[member.id] || {};
+
+                    return (
+                      <View key={member.id} style={[dissStyles.memberBlock, { backgroundColor: colors.backgroundElement }]}>
+                        <View style={dissStyles.memberBlockHeader}>
+                          {pic ? (
+                            <Image source={{ uri: pic }} style={dissStyles.memberAvatar} />
+                          ) : (
+                            <View style={[dissStyles.memberAvatar, dissStyles.memberAvatarFallback]}>
+                              <Ionicons name="person" size={16} color={PALETTE.rose} />
+                            </View>
+                          )}
+                          <Text style={[dissStyles.memberBlockName, { color: colors.text }]}>
+                            {member.full_name || member.user_name}
+                          </Text>
+                        </View>
+
+                        {DIMENSIONS.map((dim) => (
+                          <View key={dim.key} style={dissStyles.dimBlock}>
+                            <Text style={[dissStyles.dimQuestion, { color: colors.textSecondary }]}>
+                              {dim.emoji}  {dim.question}
+                            </Text>
+                            <View style={dissStyles.dimRow}>
+                              <TouchableOpacity
+                                style={[
+                                  dissStyles.dimBtn,
+                                  ratings[dim.key] === 0 && dissStyles.dimBtnActive,
+                                ]}
+                                onPress={() => setMemberDimension(member.id, dim.key, ratings[dim.key] === 0 ? null : 0)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[
+                                  dissStyles.dimBtnText,
+                                  ratings[dim.key] === 0 && dissStyles.dimBtnTextActive,
+                                ]}>{dim.left}</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  dissStyles.dimBtn,
+                                  ratings[dim.key] === 1 && dissStyles.dimBtnActive,
+                                ]}
+                                onPress={() => setMemberDimension(member.id, dim.key, ratings[dim.key] === 1 ? null : 1)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[
+                                  dissStyles.dimBtnText,
+                                  ratings[dim.key] === 1 && dissStyles.dimBtnTextActive,
+                                ]}>{dim.right}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })}
+
+                  <TouchableOpacity
+                    style={dissStyles.submitBtn}
+                    onPress={handleSubmitDissolution}
+                    disabled={submittingFeedback}
+                    activeOpacity={0.85}
+                  >
+                    {submittingFeedback
+                      ? <ActivityIndicator color="#fff" />
+                      : <Text style={dissStyles.submitBtnText}>Soumettre ✨</Text>
+                    }
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={dissStyles.skipBtnBottom} onPress={finalizeDissolution} activeOpacity={0.7}>
+                    <Text style={[dissStyles.skipBtnText, { color: colors.textSecondary }]}>Passer cette étape</Text>
+                  </TouchableOpacity>
+
+                  <View style={{ height: 40 }} />
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   // ── Render Group View ──
   const renderGroupView = () => {
     if (!group) return null;
@@ -262,11 +692,40 @@ export default function GroupsScreen() {
 
     return (
       <ScrollView style={styles.groupContent} showsVerticalScrollIndicator={false}>
-        {/* Common interest */}
+        {/* Common interest + compatibility */}
         <View style={[styles.interestCard, { backgroundColor: PALETTE.rosePale }]}>
           <Ionicons name="sparkles" size={20} color={PALETTE.rose} />
           <Text style={styles.interestText}>{group.common_interest || 'Groupe hebdomadaire'}</Text>
         </View>
+
+        {/* Compatibility breakdown */}
+        {group.compatibility_score != null && (
+          <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+            <View style={styles.compatHeader}>
+              <Ionicons name="heart-circle-outline" size={18} color={PALETTE.rose} />
+              <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>
+                Compatibilité du groupe
+              </Text>
+              <Text style={styles.compatTotal}>{Math.round(group.compatibility_score * 100)}%</Text>
+            </View>
+            {[
+              { label: 'Psychologique', pct: group.psych_score, weight: '40%', color: '#CC3D5E' },
+              { label: 'Préférences', pct: group.pref_score, weight: '35%', color: '#6D28D9' },
+              { label: 'Comportemental', pct: group.behav_score, weight: '25%', color: '#0369A1' },
+            ].map(({ label, pct, weight, color }) => (
+              pct != null ? (
+                <View key={label} style={styles.compatRow}>
+                  <Text style={[styles.compatLabel, { color: colors.textSecondary }]}>{label}</Text>
+                  <View style={[styles.compatBar, { backgroundColor: colors.backgroundSelected }]}>
+                    <View style={[styles.compatFill, { width: `${Math.round((pct || 0) * 100)}%`, backgroundColor: color }]} />
+                  </View>
+                  <Text style={[styles.compatPct, { color }]}>{Math.round((pct || 0) * 100)}%</Text>
+                  <Text style={[styles.compatWeight, { color: colors.textSecondary }]}>{weight}</Text>
+                </View>
+              ) : null
+            ))}
+          </View>
+        )}
 
         {/* Rendezvous */}
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
@@ -299,51 +758,127 @@ export default function GroupsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Members */}
+        {/* Activity suggestions */}
+        {group.activity_suggestions?.length > 0 && (
+          <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+            <View style={styles.activityHeaderRow}>
+              <View style={styles.activityHeaderLeft}>
+                <Ionicons name="bulb-outline" size={18} color='#F59E0B' />
+                <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>Idées pour vous</Text>
+              </View>
+              {group.activity_suggestions.some(a => a.tag === 'sport' || a.tag === 'hobby') && (
+                <View style={styles.activityBadge}>
+                  <Text style={styles.activityBadgeText}>Vos intérêts ✨</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.voteQuestion, { color: colors.textSecondary, marginBottom: 12 }]}>
+              Sélectionnées d'après vos sports et passions communs
+            </Text>
+            {group.activity_suggestions.map((activity, index) => {
+              const voteCount = group.activity_votes?.counts?.[index] || 0;
+              const hasVoted = group.activity_votes?.my_votes?.includes(index);
+              const isVoting = votingActivity === index;
+              return (
+                <View key={index} style={[styles.activityRow, index > 0 && styles.activityRowBorder]}>
+                  <View style={[styles.activityIcon, { backgroundColor: activity.color + '22' }]}>
+                    <Ionicons name={activity.icon || 'star-outline'} size={22} color={activity.color} />
+                  </View>
+                  <View style={styles.activityInfo}>
+                    <Text style={[styles.activityTitle, { color: colors.text }]}>{activity.title}</Text>
+                    <Text style={[styles.activityDesc, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {activity.description}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.activityVoteBtn,
+                      { backgroundColor: hasVoted ? PALETTE.rose : colors.backgroundSelected },
+                    ]}
+                    onPress={() => handleVoteActivity(index)}
+                    disabled={isVoting}
+                    activeOpacity={0.75}
+                  >
+                    {isVoting
+                      ? <ActivityIndicator size="small" color={hasVoted ? '#fff' : PALETTE.rose} />
+                      : <>
+                          <Text style={styles.activityVoteEmoji}>👍</Text>
+                          {voteCount > 0 && (
+                            <Text style={[styles.activityVoteCount, { color: hasVoted ? '#fff' : colors.textSecondary }]}>
+                              {voteCount}
+                            </Text>
+                          )}
+                        </>
+                    }
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Members — progressive reveal */}
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            <Ionicons name="people-outline" size={18} color={PALETTE.rose} />  Membres ({members.length})
-          </Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>
+              <Ionicons name="people-outline" size={18} color={PALETTE.rose} />  Membres ({members.length})
+            </Text>
+            {revealLevel < 2 && (
+              <View style={styles.revealBadge}>
+                <Ionicons name="eye-off-outline" size={12} color={PALETTE.rose} />
+                <Text style={styles.revealBadgeText}>
+                  {revealLevel === 0 ? 'Révèle J+1' : 'Bio J+2'}
+                </Text>
+              </View>
+            )}
+          </View>
           <View style={styles.membersList}>
             {members.map((member) => {
-              const memberPic = Array.isArray(parseDbJson(member.profile_image))
-                ? parseDbJson(member.profile_image)[0]
-                : null;
+              const isSelf = member.id === currentUser?.id;
+              const memberPicRaw = parseDbJson(member.profile_image);
+              const memberPic = Array.isArray(memberPicRaw) ? memberPicRaw[0] : null;
+              const showPhoto = isSelf || revealLevel >= 1;
+              const showFullName = isSelf || revealLevel >= 1;
+              const showLocation = isSelf || revealLevel >= 2;
+              const firstName = (member.full_name || member.user_name || '?').split(' ')[0];
+              const rawMemberLabels = member.labels && typeof member.labels === 'object' ? member.labels : {};
+              const firstVibe = rawMemberLabels.vibe?.[0] || null;
+
               return (
                 <TouchableOpacity
                   key={member.id}
                   style={styles.memberItem}
-                  onPress={() => {
-                    if (member.id !== currentUser?.id) {
-                      router.push(`/(tabs)/user/${member.id}`);
-                    }
-                  }}
+                  onPress={() => { if (!isSelf && revealLevel >= 1) router.push(`/(tabs)/user/${member.id}`); }}
                   activeOpacity={0.7}
                 >
-                  {memberPic ? (
+                  {showPhoto && memberPic ? (
                     <Image source={{ uri: memberPic }} style={styles.memberAvatar} />
                   ) : (
                     <View style={[styles.memberAvatarPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
-                      <Ionicons name="person" size={18} color={PALETTE.rose} />
+                      {showPhoto
+                        ? <Ionicons name="person" size={18} color={PALETTE.rose} />
+                        : <Text style={{ fontSize: 18 }}>🌸</Text>
+                      }
                     </View>
                   )}
                   <View style={styles.memberInfo}>
                     <Text style={[styles.memberName, { color: colors.text }]}>
-                      {member.full_name || member.user_name}
-                      {member.id === currentUser?.id ? ' (toi)' : ''}
+                      {showFullName ? (member.full_name || member.user_name) : firstName}
+                      {isSelf ? ' (toi)' : ''}
                     </Text>
-                    {member.location && (
+                    {!showFullName && firstVibe && (
+                      <View style={styles.memberRevealLabel}>
+                        <Text style={styles.memberRevealLabelText}>{firstVibe}</Text>
+                      </View>
+                    )}
+                    {showLocation && member.location && (
                       <Text style={[styles.memberLocation, { color: colors.textSecondary }]}>
                         {member.location}
                       </Text>
                     )}
                   </View>
-                  {member.id !== currentUser?.id && (
-                    <TouchableOpacity
-                      onPress={() => handleOpenDm(member.id)}
-                      style={styles.messageBtn}
-                      disabled={openingDm === member.id}
-                    >
+                  {!isSelf && revealLevel >= 1 && (
+                    <TouchableOpacity onPress={() => handleOpenDm(member.id)} style={styles.messageBtn} disabled={openingDm === member.id}>
                       {openingDm === member.id
                         ? <ActivityIndicator size="small" color={PALETTE.rose} />
                         : <Ionicons name="chatbubble-outline" size={20} color={PALETTE.rose} />
@@ -366,95 +901,110 @@ export default function GroupsScreen() {
           </Text>
         </View>
 
-        {/* Vote section */}
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            <Ionicons name="thumbs-up-outline" size={18} color={PALETTE.rose} />  Vote de fin de semaine
-          </Text>
-          <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
-            Le groupe doit-il continuer la semaine prochaine ?
-          </Text>
-          <View style={styles.voteRow}>
-            <TouchableOpacity
-              style={[styles.voteBtn, styles.voteContinue]}
-              onPress={() => handleVote(true)}
-              disabled={voting}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-circle" size={22} color="#fff" />
-              <Text style={styles.voteBtnText}>Continuer ({voteSummary.continue})</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.voteBtn, styles.voteDisband]}
-              onPress={() => handleVote(false)}
-              disabled={voting}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close-circle" size={22} color="#fff" />
-              <Text style={styles.voteBtnText}>Arrêter ({voteSummary.disband})</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.voteTotal, { color: colors.textSecondary }]}>
-            {voteSummary.total}/{members.length} votes
-          </Text>
-        </View>
-
-        {/* Per-member votes */}
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            <Ionicons name="person-outline" size={18} color={PALETTE.rose} />  Vote sur chaque membre
-          </Text>
-          <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
-            Qui veux-tu garder dans le groupe la semaine prochaine ?
-          </Text>
-          {members.filter((m) => m.id !== currentUser?.id).map((member) => {
-            const memberPic = Array.isArray(parseDbJson(member.profile_image)) ? parseDbJson(member.profile_image)[0] : null;
-            const vote = memberVotes[member.id];
-            return (
-              <View key={member.id} style={styles.memberVoteRow}>
-                {memberPic
-                  ? <Image source={{ uri: memberPic }} style={styles.memberAvatar} />
-                  : <View style={[styles.memberAvatarPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
-                      <Ionicons name="person" size={18} color={PALETTE.rose} />
-                    </View>
-                }
-                <Text style={[styles.memberName, { color: colors.text, flex: 1 }]}>
-                  {member.full_name || member.user_name}
-                </Text>
+        {/* Vote section — only visible in the last 2 days of the week */}
+        {isEndOfWeek ? (
+          <>
+            <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>
+                <Ionicons name="thumbs-up-outline" size={18} color={PALETTE.rose} />  Vote de fin de semaine
+              </Text>
+              <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
+                Le groupe doit-il continuer la semaine prochaine ?
+              </Text>
+              <View style={styles.voteRow}>
                 <TouchableOpacity
-                  style={[styles.memberVoteBtn, { backgroundColor: vote === true ? PALETTE.success : colors.backgroundSelected }]}
-                  onPress={() => handleMemberVoteToggle(member.id, true)}
-                  activeOpacity={0.7}
+                  style={[styles.voteBtn, styles.voteContinue]}
+                  onPress={() => handleVote(true)}
+                  disabled={voting}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="checkmark" size={16} color={vote === true ? '#fff' : colors.textSecondary} />
+                  <Ionicons name="checkmark-circle" size={22} color="#fff" />
+                  <Text style={styles.voteBtnText}>Continuer ({voteSummary.continue})</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.memberVoteBtn, { backgroundColor: vote === false ? PALETTE.error : colors.backgroundSelected }]}
-                  onPress={() => handleMemberVoteToggle(member.id, false)}
-                  activeOpacity={0.7}
+                  style={[styles.voteBtn, styles.voteDisband]}
+                  onPress={() => handleVote(false)}
+                  disabled={voting}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="close" size={16} color={vote === false ? '#fff' : colors.textSecondary} />
+                  <Ionicons name="close-circle" size={22} color="#fff" />
+                  <Text style={styles.voteBtnText}>Arrêter ({voteSummary.disband})</Text>
                 </TouchableOpacity>
               </View>
-            );
-          })}
-          {Object.keys(memberVotes).length > 0 && (
-            <TouchableOpacity
-              style={[styles.actionButton, { marginTop: Spacing.two }]}
-              onPress={handleSubmitMemberVotes}
-              disabled={submittingMemberVotes}
-              activeOpacity={0.8}
-            >
-              {submittingMemberVotes
-                ? <ActivityIndicator size="small" color={PALETTE.rose} />
-                : <>
-                    <Ionicons name="checkmark-circle-outline" size={18} color={PALETTE.rose} />
-                    <Text style={styles.actionButtonText}>Enregistrer les votes</Text>
-                  </>
-              }
-            </TouchableOpacity>
-          )}
-        </View>
+              <Text style={[styles.voteTotal, { color: colors.textSecondary }]}>
+                {voteSummary.total}/{members.length} votes
+              </Text>
+            </View>
+
+            <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>
+                <Ionicons name="person-outline" size={18} color={PALETTE.rose} />  Vote sur chaque membre
+              </Text>
+              <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
+                Qui veux-tu garder dans le groupe la semaine prochaine ?
+              </Text>
+              {members.filter((m) => m.id !== currentUser?.id).map((member) => {
+                const memberPic = Array.isArray(parseDbJson(member.profile_image)) ? parseDbJson(member.profile_image)[0] : null;
+                const vote = memberVotes[member.id];
+                return (
+                  <View key={member.id} style={styles.memberVoteRow}>
+                    {memberPic
+                      ? <Image source={{ uri: memberPic }} style={styles.memberAvatar} />
+                      : <View style={[styles.memberAvatarPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
+                          <Ionicons name="person" size={18} color={PALETTE.rose} />
+                        </View>
+                    }
+                    <Text style={[styles.memberName, { color: colors.text, flex: 1 }]}>
+                      {member.full_name || member.user_name}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.memberVoteBtn, { backgroundColor: vote === true ? PALETTE.success : colors.backgroundSelected }]}
+                      onPress={() => handleMemberVoteToggle(member.id, true)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="checkmark" size={16} color={vote === true ? '#fff' : colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.memberVoteBtn, { backgroundColor: vote === false ? PALETTE.error : colors.backgroundSelected }]}
+                      onPress={() => handleMemberVoteToggle(member.id, false)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="close" size={16} color={vote === false ? '#fff' : colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              {Object.keys(memberVotes).length > 0 && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { marginTop: Spacing.two }]}
+                  onPress={handleSubmitMemberVotes}
+                  disabled={submittingMemberVotes}
+                  activeOpacity={0.8}
+                >
+                  {submittingMemberVotes
+                    ? <ActivityIndicator size="small" color={PALETTE.rose} />
+                    : <>
+                        <Ionicons name="checkmark-circle-outline" size={18} color={PALETTE.rose} />
+                        <Text style={styles.actionButtonText}>Enregistrer les votes</Text>
+                      </>
+                  }
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={[styles.card, styles.voteCountdownCard, { backgroundColor: colors.backgroundElement }]}>
+            <Ionicons name="time-outline" size={22} color={PALETTE.rose} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 2 }]}>Votes bientôt disponibles</Text>
+              <Text style={[styles.voteQuestion, { color: colors.textSecondary, marginBottom: 0 }]}>
+                {daysUntilVote === 1
+                  ? 'Les votes ouvrent demain — profitez de la semaine !'
+                  : `Les votes ouvrent dans ${daysUntilVote} jours — profitez de la semaine !`}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Leave button */}
         <TouchableOpacity
@@ -541,6 +1091,7 @@ export default function GroupsScreen() {
         keyExtractor={(item) => String(item?.id ?? Math.random())}
         renderItem={({ item }) => {
           const isMine = item.sender_id === currentUser?.id;
+          const isVoice = item.message_type === 'voice' && item.media_url;
           return (
             <View style={[styles.chatMsg, isMine ? styles.chatMsgRight : styles.chatMsgLeft]}>
               {!isMine && (
@@ -548,21 +1099,33 @@ export default function GroupsScreen() {
                   {item.sender_name || item.sender_username}
                 </Text>
               )}
-              <View
-                style={[
-                  styles.chatBubble,
-                  isMine
-                    ? { backgroundColor: PALETTE.rose }
-                    : { backgroundColor: colors.backgroundElement },
-                ]}
-              >
-                <Text style={[styles.chatText, { color: isMine ? '#fff' : colors.text }]}>
-                  {item.content}
+              {isVoice ? (
+                <GroupVoiceBubble
+                  uri={getStorageUrl(item.media_url)}
+                  isMine={isMine}
+                  colors={colors}
+                  isDark={isDark}
+                  time={formatTime(item.created_at)}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.chatBubble,
+                    isMine
+                      ? { backgroundColor: PALETTE.rose }
+                      : { backgroundColor: colors.backgroundElement },
+                  ]}
+                >
+                  <Text style={[styles.chatText, { color: isMine ? '#fff' : colors.text }]}>
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+              {!isVoice && (
+                <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
+                  {formatTime(item.created_at)}
                 </Text>
-              </View>
-              <Text style={[styles.chatTime, { color: colors.textSecondary }]}>
-                {formatTime(item.created_at)}
-              </Text>
+              )}
             </View>
           );
         }}
@@ -573,32 +1136,90 @@ export default function GroupsScreen() {
           <View style={styles.emptyChat}>
             <Ionicons name="chatbubbles-outline" size={36} color={PALETTE.rose} />
             <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
-              Pas encore de messages. Dis bonjour !
+              Lancez la conversation ! 🌸
             </Text>
+            <Text style={[styles.emptyChatSub, { color: colors.textSecondary }]}>
+              Brise-glaces pour commencer :
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.iceBreakerRow}>
+              {GROUP_ICE_BREAKERS.map((prompt, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.iceBreakerChip, { backgroundColor: colors.backgroundElement }]}
+                  onPress={() => setInputText(prompt)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.iceBreakerChipText, { color: colors.text }]}>{prompt}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         }
       />
 
       <View style={[styles.chatInputBar, { backgroundColor: colors.background, borderTopColor: colors.backgroundSelected }]}>
-        <TextInput
-          style={[styles.chatInput, { backgroundColor: colors.backgroundElement, color: colors.text }]}
-          placeholder="Écris ton message..."
-          placeholderTextColor={colors.textSecondary}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          maxLength={5000}
-          returnKeyType="send"
-          onSubmitEditing={handleSendMessage}
-        />
-        <TouchableOpacity
-          style={[styles.chatSendBtn, { opacity: inputText.trim().length > 0 ? 1 : 0.4 }]}
-          onPress={handleSendMessage}
-          disabled={inputText.trim().length === 0 || sending}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="send" size={18} color="#fff" />
-        </TouchableOpacity>
+        {isRecordingVoice ? (
+          <>
+            <TouchableOpacity
+              style={[styles.chatVoiceActionBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
+              onPress={cancelGroupRecording}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <View style={[styles.chatInput, { backgroundColor: colors.backgroundElement, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}>
+              <View style={styles.chatRecDot} />
+              <Text style={{ color: '#FF3B30', fontWeight: '600', fontSize: 15 }}>
+                {`${Math.floor(Math.floor((recorderState.durationMillis ?? 0) / 1000) / 60)}:${String(Math.floor((recorderState.durationMillis ?? 0) / 1000) % 60).padStart(2, '0')}`}
+              </Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13 }}>En cours...</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.chatSendBtn, { backgroundColor: '#FF3B30' }]}
+              onPress={stopGroupRecording}
+              disabled={uploadingVoice}
+              activeOpacity={0.7}
+            >
+              {uploadingVoice
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="stop" size={18} color="#fff" />
+              }
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TextInput
+              style={[styles.chatInput, { backgroundColor: colors.backgroundElement, color: colors.text }]}
+              placeholder="Écris ton message..."
+              placeholderTextColor={colors.textSecondary}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={5000}
+              returnKeyType="send"
+              onSubmitEditing={handleSendMessage}
+            />
+            {inputText.trim().length > 0 ? (
+              <TouchableOpacity
+                style={[styles.chatSendBtn, { opacity: !sending ? 1 : 0.4 }]}
+                onPress={handleSendMessage}
+                disabled={sending}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="send" size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.chatSendBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
+                onPress={startGroupRecording}
+                disabled={sending}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="mic-outline" size={18} color={PALETTE.rose} />
+              </TouchableOpacity>
+            )}
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -616,9 +1237,9 @@ export default function GroupsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Groupes</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Cercles</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          {group ? 'Ton groupe de la semaine' : 'Rejoins un groupe cette semaine'}
+          {group ? 'Ton cercle de la semaine' : 'Rejoins un groupe cette semaine'}
         </Text>
       </View>
 
@@ -629,10 +1250,10 @@ export default function GroupsScreen() {
             <Ionicons name="people-outline" size={48} color={PALETTE.rose} />
           </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Pas de groupe cette semaine
+            Pas de cercle cette semaine
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            On va te trouver un groupe avec des personnes qui te ressemblent, proches de chez toi !
+            On va te trouver un cercle avec des personnes qui te ressemblent, proches de chez toi !
           </Text>
           <TouchableOpacity
             style={styles.generateButton}
@@ -645,7 +1266,7 @@ export default function GroupsScreen() {
             ) : (
               <>
                 <Ionicons name="sparkles" size={18} color="#fff" />
-                <Text style={styles.generateButtonText}>Créer mon groupe</Text>
+                <Text style={styles.generateButtonText}>Créer mon cercle</Text>
               </>
             )}
           </TouchableOpacity>
@@ -700,6 +1321,7 @@ export default function GroupsScreen() {
       )}
 
       {renderRendezvousModal()}
+      {renderDissolutionModal()}
     </View>
   );
 }
@@ -901,6 +1523,83 @@ const styles = StyleSheet.create({
   messageBtn: {
     padding: Spacing.one,
   },
+  // ── Activity suggestions ──
+  activityHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.one,
+  },
+  activityHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  activityBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  activityBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  activityRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.07)',
+  },
+  activityIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  activityInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  activityTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  activityDesc: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  activityVoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    minWidth: 44,
+    justifyContent: 'center',
+  },
+  activityVoteEmoji: {
+    fontSize: 16,
+  },
+  activityVoteCount: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  voteCountdownCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   // ── Vote ──
   voteQuestion: {
     fontSize: 14,
@@ -1002,8 +1701,93 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   emptyChatText: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '600',
   },
+  emptyChatSub: {
+    fontSize: 13,
+    marginTop: 4,
+  },
+  iceBreakerRow: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 10,
+  },
+  iceBreakerChip: {
+    maxWidth: 200,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: PALETTE.rose + '40',
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  iceBreakerChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  // Progressive reveal
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.two,
+  },
+  revealBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: PALETTE.rosePale,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  revealBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.rose,
+  },
+  memberRevealLabel: {
+    backgroundColor: '#FFF0F3',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 3,
+  },
+  memberRevealLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#CC3D5E',
+  },
+  compatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  compatTotal: {
+    marginLeft: 'auto',
+    fontSize: 18,
+    fontWeight: '800',
+    color: PALETTE.rose,
+  },
+  compatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  compatLabel: { fontSize: 12, fontWeight: '600', width: 100 },
+  compatBar: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
+  compatFill: { height: 6, borderRadius: 3 },
+  compatPct: { fontSize: 12, fontWeight: '700', width: 34, textAlign: 'right' },
+  compatWeight: { fontSize: 11, width: 28 },
   chatInputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1029,6 +1813,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
+  },
+  chatVoiceActionBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 2,
+  },
+  chatRecDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30',
   },
   // ── Rendezvous Modal ──
   modalOverlay: {
@@ -1108,5 +1900,180 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 15,
+  },
+});
+
+const dissStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: '90%',
+    paddingTop: Spacing.three,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  stepContent: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingBottom: 40,
+  },
+  emojiWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  emoji: { fontSize: 36 },
+  sheetTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  sheetSub: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 36,
+  },
+  star: { fontSize: 40 },
+  stepBtns: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  skipBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  skipBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  nextBtn: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: PALETTE.rose,
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nextBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  step2Header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
+    paddingBottom: 8,
+  },
+  membersList: {
+    paddingHorizontal: Spacing.four,
+    gap: 12,
+    paddingBottom: 20,
+  },
+  memberBlock: {
+    borderRadius: 18,
+    padding: Spacing.three,
+    gap: 10,
+  },
+  memberBlockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  memberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  memberAvatarFallback: {
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberBlockName: {
+    fontSize: 15,
+    fontWeight: '700',
+    flex: 1,
+  },
+  dimBlock: {
+    gap: 6,
+  },
+  dimQuestion: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  dimRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dimBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  dimBtnActive: {
+    backgroundColor: PALETTE.rose,
+  },
+  dimBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#888',
+  },
+  dimBtnTextActive: {
+    color: '#fff',
+  },
+  submitBtn: {
+    marginTop: 8,
+    backgroundColor: PALETTE.rose,
+    paddingVertical: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  submitBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  skipBtnBottom: {
+    alignItems: 'center',
+    paddingVertical: 14,
   },
 });

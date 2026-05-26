@@ -12,6 +12,7 @@ import {
   Image,
   Alert,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
+import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMG_BUBBLE_W = SCREEN_WIDTH * 0.6;
@@ -52,6 +54,100 @@ function isSameDay(a, b) {
     && da.getDate() === db.getDate();
 }
 
+const WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+
+function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
+  const player = useAudioPlayer(uri ? { uri } : null);
+  const status = useAudioPlayerStatus(player);
+  const isPlaying = status?.playing ?? false;
+  const duration = status?.duration ?? 0;
+  const position = status?.currentTime ?? 0;
+  const progress = duration > 0 ? position / duration : 0;
+
+  const fmtDur = (secs) => {
+    const s = Math.floor(secs ?? 0);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  const toggle = () => { if (isPlaying) player.pause(); else player.play(); };
+  const activeColor = isMine ? '#fff' : PALETTE.rose;
+  const inactiveColor = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
+
+  return (
+    <View style={[
+      vStyles.wrap,
+      isMine ? { backgroundColor: PALETTE.rose } : { backgroundColor: isDark ? '#3D332E' : '#F5EDEA' },
+    ]}>
+      <TouchableOpacity
+        onPress={toggle}
+        style={[vStyles.playBtn, { backgroundColor: isMine ? 'rgba(255,255,255,0.22)' : PALETTE.rosePale }]}
+        activeOpacity={0.7}
+      >
+        <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={isMine ? '#fff' : PALETTE.rose} />
+      </TouchableOpacity>
+
+      <View style={vStyles.mid}>
+        <View style={vStyles.waveform}>
+          {WAVEFORM.map((h, i) => (
+            <View
+              key={i}
+              style={[
+                vStyles.bar,
+                {
+                  height: h,
+                  backgroundColor: i / WAVEFORM.length <= progress ? activeColor : inactiveColor,
+                },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[vStyles.dur, { color: isMine ? 'rgba(255,255,255,0.75)' : colors.textSecondary }]}>
+          {fmtDur(position > 0 ? position : duration)}
+        </Text>
+      </View>
+
+      <View style={vStyles.meta}>
+        <Text style={{ fontSize: 10, color: isMine ? 'rgba(255,255,255,0.65)' : colors.textSecondary }}>{time}</Text>
+        {isMine && (
+          <Ionicons
+            name={isSeen ? 'checkmark-done' : 'checkmark'}
+            size={11}
+            color={isSeen ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'}
+          />
+        )}
+      </View>
+    </View>
+  );
+}
+
+const vStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+    minWidth: 190,
+    maxWidth: SCREEN_WIDTH * 0.72,
+  },
+  playBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  mid: { flex: 1, gap: 5 },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2.5,
+    height: 20,
+  },
+  bar: { width: 3, borderRadius: 2 },
+  dur: { fontSize: 10, fontWeight: '600' },
+  meta: { gap: 2, alignItems: 'flex-end', flexShrink: 0 },
+});
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
   const conversationId = Array.isArray(id) ? id[0] ?? '' : id ?? '';
@@ -66,15 +162,29 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [conversation, setConversation] = useState(null);
+  const [iceBreaker, setIceBreaker] = useState(null);
+  const [iceBreakerLoading, setIceBreakerLoading] = useState(false);
+  const [iceBreakerDismissed, setIceBreakerDismissed] = useState(false);
+  const iceBreakerAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef(null);
   const pollInterval = useRef(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordTimerRef = useRef(null);
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId) return;
     try {
       const res = await messagesApi.getMessages(conversationId);
-      setMessages(res.data?.messages ?? []);
-      if (res.data?.conversation) setConversation(res.data.conversation);
+      const msgs = res.data?.messages ?? [];
+      setMessages(msgs);
+      if (res.data?.conversation) {
+        setConversation(res.data.conversation);
+        if (msgs.length === 0 && res.data.conversation.other_user_id && !iceBreaker && !iceBreakerDismissed) {
+          fetchIceBreaker(res.data.conversation.other_user_id);
+        }
+      }
     } catch (err) {
       console.error('Fetch messages error:', err);
     } finally {
@@ -93,6 +203,61 @@ export default function ChatScreen() {
     }
   }, [conversationId]);
 
+  const fetchIceBreaker = async (userId) => {
+    if (!userId || iceBreakerLoading) return;
+    setIceBreakerLoading(true);
+    try {
+      const res = await messagesApi.genrateIceBreaker({ other_user_id: userId });
+      const data = res.data;
+      if (data?.message || data?.ice_breaker) {
+        setIceBreaker(data);
+        // Animate card in
+        Animated.spring(iceBreakerAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 80,
+          friction: 10,
+        }).start();
+      }
+    } catch (err) {
+      console.error('Fetch ice breaker error:', err);
+    } finally {
+      setIceBreakerLoading(false);
+    }
+  };
+
+  const handleUseIceBreaker = () => {
+    const text = iceBreaker?.message || iceBreaker?.ice_breaker || '';
+    if (text) {
+      setInputText(text);
+      dismissIceBreaker();
+    }
+  };
+
+  const handleRefreshIceBreaker = () => {
+    setIceBreaker(null);
+    Animated.timing(iceBreakerAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      if (conversation?.other_user_id) {
+        fetchIceBreaker(conversation.other_user_id);
+      }
+    });
+  };
+
+  const dismissIceBreaker = () => {
+    Animated.timing(iceBreakerAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setIceBreakerDismissed(true);
+      setIceBreaker(null);
+    });
+  };
+
   useEffect(() => {
     fetchMessages();
     fetchConversation();
@@ -109,6 +274,9 @@ export default function ChatScreen() {
 
     try {
       await messagesApi.sendMessage({ conversation_id: conversationId, content: text });
+      await messagesApi.updateStreak({
+        conversationId: conversationId
+      });
       await fetchMessages();
     } catch (err) {
       console.error('Send message error:', err);
@@ -190,6 +358,9 @@ export default function ChatScreen() {
         message_type: 'image',
         media_url: url,
       });
+      await messagesApi.updateStreak({
+        conversationId: conversationId
+      });
       await fetchMessages();
     } catch (err) {
       console.error('Image send error:', err);
@@ -211,9 +382,158 @@ export default function ChatScreen() {
     }
   };
 
+  const startRecording = async () => {
+    const { granted } = await requestRecordingPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permission requise', "Autorise l'accès au micro pour enregistrer des messages vocaux.");
+      return;
+    }
+    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    setIsRecording(true);
+    recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
+  };
+
+  const stopAndSendRecording = async () => {
+    if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
+    setIsRecording(false);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const uri = recorder.uri;
+      if (uri) await sendVoiceMessage(uri);
+    } catch (err) {
+      console.error('Stop recording error:', err);
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
+    setIsRecording(false);
+    try {
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    } catch (_) {}
+  };
+
+  const sendVoiceMessage = async (uri) => {
+    if (!conversationId || uploadingMedia) return;
+    setUploadingMedia(true);
+    try {
+      const { url } = await uploadApi.uploadAudio({
+        uri,
+        fileName: `voice_${Date.now()}.m4a`,
+        mimeType: 'audio/m4a',
+      });
+      await messagesApi.sendMessage({
+        conversation_id: conversationId,
+        content: '',
+        message_type: 'voice',
+        media_url: url,
+      });
+
+      await messagesApi.updateStreak({
+        conversationId: conversationId
+      });
+
+      await fetchMessages();
+    } catch (err) {
+      console.error('Voice send error:', err);
+      Alert.alert('Oups', "Le message vocal n'a pas pu être envoyé.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
   const formatTime = (dateStr) => {
     const date = new Date(dateStr);
     return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // ── Ice Breaker card ──
+  const renderIceBreakerCard = () => {
+    if (!iceBreaker || iceBreakerDismissed) return null;
+    const message = iceBreaker?.message || iceBreaker?.ice_breaker || '';
+    if (!message) return null;
+
+    const translateY = iceBreakerAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [60, 0],
+    });
+    const opacity = iceBreakerAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 1],
+    });
+
+    return (
+      <Animated.View
+        style={[
+          styles.iceBreakerWrap,
+          {
+            transform: [{ translateY }],
+            opacity,
+          },
+        ]}
+      >
+        <View style={[styles.iceBreakerCard, { backgroundColor: isDark ? '#3D2A3A' : '#FFF0F3' }]}>
+          {/* Gradient shimmer overlay */}
+          <View style={styles.iceBreakerShimmer}>
+            <View style={[styles.iceBreakerShimmerDot, { backgroundColor: 'rgba(255,143,163,0.19)' }]} />
+            <View style={[styles.iceBreakerShimmerDot2, { backgroundColor: 'rgba(232,213,245,0.15)' }]} />
+          </View>
+
+          {/* Header */}
+          <View style={styles.iceBreakerHeader}>
+            <View style={styles.iceBreakerHeaderLeft}>
+              <View style={styles.iceBreakerSparkleWrap}>
+                <Ionicons name="sparkles" size={16} color={PALETTE.rose} />
+              </View>
+              <Text style={styles.iceBreakerTitle}>Brise-glace</Text>
+            </View>
+            <View style={styles.iceBreakerActions}>
+              {iceBreakerLoading ? (
+                <ActivityIndicator size="small" color={PALETTE.rose} style={styles.iceBreakerRefresh} />
+              ) : (
+                <TouchableOpacity
+                  onPress={handleRefreshIceBreaker}
+                  style={styles.iceBreakerRefresh}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.6}
+                >
+                  <Ionicons name="refresh" size={18} color={PALETTE.rose} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={dismissIceBreaker}
+                style={styles.iceBreakerClose}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.6}
+              >
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Message content */}
+          <View style={styles.iceBreakerContent}>
+            <Text style={[styles.iceBreakerQuote, { color: isDark ? '#F5F0EB' : PALETTE.textDark }]}>
+              "{message}"
+            </Text>
+          </View>
+
+          {/* Use button */}
+          <TouchableOpacity
+            style={styles.iceBreakerUseBtn}
+            onPress={handleUseIceBreaker}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+            <Text style={styles.iceBreakerUseBtnText}>Utiliser ce message</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
   };
 
   const otherUserImage = (() => {
@@ -232,6 +552,7 @@ export default function ChatScreen() {
     const isFirst = !prevItem || prevItem.sender_id !== item.sender_id;
     const isLast = !nextItem || nextItem.sender_id !== item.sender_id;
     const isImage = item.message_type === 'image' && item.media_url;
+    const isVoice = item.message_type === 'voice' && item.media_url;
 
     const bubbleRadius = isMine
       ? {
@@ -285,8 +606,18 @@ export default function ChatScreen() {
             </View>
           )}
 
-          {isImage ? (
+          {isVoice ? (
+            <VoiceMessageBubble
+              uri={getStorageUrl(item.media_url)}
+              isMine={isMine}
+              colors={colors}
+              isDark={isDark}
+              time={formatTime(item.created_at)}
+              isSeen={item.is_seen}
+            />
+          ) : isImage ? (
             <View style={[styles.imgBubble, bubbleRadius]}>
+
               <Image
                 source={{ uri: getStorageUrl(item.media_url) }}
                 style={styles.chatImage}
@@ -332,6 +663,7 @@ export default function ChatScreen() {
             </View>
           )}
         </View>
+
       </View>
     );
   };
@@ -350,6 +682,15 @@ export default function ChatScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+              style={{ paddingRight: 8, paddingLeft: 4 }}
+            >
+              <Ionicons name="chevron-back" size={26} color={colors.text} />
+            </TouchableOpacity>
+          ),
           headerTitle: () => (
             <TouchableOpacity
               style={styles.headerTitle}
@@ -374,9 +715,7 @@ export default function ChatScreen() {
               </View>
             </TouchableOpacity>
           ),
-          headerBackTitle: '',
           headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
           headerShadowVisible: false,
         }}
       />
@@ -412,6 +751,9 @@ export default function ChatScreen() {
           }
         />
 
+        {/* Ice Breaker card */}
+        {messages.length === 0 && renderIceBreakerCard()}
+
         {/* Input bar */}
         <View style={[
           styles.inputBar,
@@ -420,49 +762,88 @@ export default function ChatScreen() {
             borderTopColor: isDark ? '#3D332E' : PALETTE.border,
           },
         ]}>
-          {/* Image button */}
-          <TouchableOpacity
-            style={[styles.mediaBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
-            onPress={handlePickImage}
-            disabled={uploadingMedia || sending}
-            activeOpacity={0.7}
-          >
-            {uploadingMedia ? (
-              <ActivityIndicator size="small" color={PALETTE.rose} />
-            ) : (
-              <Ionicons name="image-outline" size={22} color={PALETTE.rose} />
-            )}
-          </TouchableOpacity>
+          {isRecording ? (
+            <>
+              <TouchableOpacity
+                style={[styles.mediaBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
+                onPress={cancelRecording}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <View style={[styles.textInput, { backgroundColor: isDark ? '#3D332E' : '#F5EDEA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}>
+                <View style={styles.recDot} />
+                <Text style={{ color: '#FF3B30', fontWeight: '600', fontSize: 15 }}>
+                  {`${Math.floor(Math.floor((recorderState.durationMillis ?? 0) / 1000) / 60)}:${String(Math.floor((recorderState.durationMillis ?? 0) / 1000) % 60).padStart(2, '0')}`}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>En cours...</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.sendBtn, { backgroundColor: '#FF3B30' }]}
+                onPress={stopAndSendRecording}
+                disabled={uploadingMedia}
+                activeOpacity={0.7}
+              >
+                {uploadingMedia
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="stop" size={18} color="#fff" />
+                }
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.mediaBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
+                onPress={handlePickImage}
+                disabled={uploadingMedia || sending}
+                activeOpacity={0.7}
+              >
+                {uploadingMedia ? (
+                  <ActivityIndicator size="small" color={PALETTE.rose} />
+                ) : (
+                  <Ionicons name="image-outline" size={22} color={PALETTE.rose} />
+                )}
+              </TouchableOpacity>
 
-          <TextInput
-            style={[
-              styles.textInput,
-              {
-                backgroundColor: isDark ? '#3D332E' : '#F5EDEA',
-                color: colors.text,
-              },
-            ]}
-            placeholder="Message..."
-            placeholderTextColor={colors.textSecondary}
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={5000}
-            returnKeyType="send"
-            onSubmitEditing={handleSend}
-          />
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: isDark ? '#3D332E' : '#F5EDEA',
+                    color: colors.text,
+                  },
+                ]}
+                placeholder="Message..."
+                placeholderTextColor={colors.textSecondary}
+                value={inputText}
+                onChangeText={setInputText}
+                multiline
+                maxLength={5000}
+                returnKeyType="send"
+                onSubmitEditing={handleSend}
+              />
 
-          <TouchableOpacity
-            style={[
-              styles.sendBtn,
-              { opacity: inputText.trim().length > 0 && !sending ? 1 : 0.4 },
-            ]}
-            onPress={handleSend}
-            disabled={inputText.trim().length === 0 || sending}
-            activeOpacity={0.7}
-          >
-            <Ionicons name={sending ? 'hourglass-outline' : 'send'} size={18} color="#fff" />
-          </TouchableOpacity>
+              {inputText.trim().length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.sendBtn, { opacity: !sending ? 1 : 0.4 }]}
+                  onPress={handleSend}
+                  disabled={sending}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={sending ? 'hourglass-outline' : 'send'} size={18} color="#fff" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.sendBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale, shadowOpacity: 0, elevation: 0 }]}
+                  onPress={startRecording}
+                  disabled={sending || uploadingMedia}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="mic-outline" size={20} color={PALETTE.rose} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -599,5 +980,118 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 4,
+  },
+
+  recDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF3B30',
+  },
+
+  // ── Ice Breaker ──
+  iceBreakerWrap: {
+    paddingHorizontal: 12,
+    paddingBottom: 4,
+  },
+  iceBreakerCard: {
+    borderRadius: 20,
+    padding: 16,
+    overflow: 'hidden',
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  iceBreakerShimmer: {
+    position: 'absolute',
+    top: -40,
+    right: -20,
+  },
+  iceBreakerShimmerDot: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+  iceBreakerShimmerDot2: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    position: 'absolute',
+    top: 30,
+    right: 60,
+  },
+  iceBreakerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  iceBreakerHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iceBreakerSparkleWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iceBreakerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE.rose,
+  },
+  iceBreakerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iceBreakerRefresh: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iceBreakerClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iceBreakerContent: {
+    marginBottom: 14,
+  },
+  iceBreakerQuote: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    letterSpacing: 0.2,
+  },
+  iceBreakerUseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: PALETTE.rose,
+    paddingVertical: 12,
+    borderRadius: 14,
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  iceBreakerUseBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

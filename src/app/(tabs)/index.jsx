@@ -217,10 +217,15 @@ function SwipeCard({ user, onSwipe, isTop }) {
 
   const sports = Array.isArray(user.sports) ? user.sports : (parseDbJson(user.sports) || []);
   const hobbies = Array.isArray(user.hobbies) ? user.hobbies : (parseDbJson(user.hobbies) || []);
+  const rawUserLabels = user.labels && typeof user.labels === 'object' ? user.labels : {};
+  const vibeLabel = rawUserLabels.vibe?.[0] || null;
+  const dispoLabel = rawUserLabels.dispo?.[0] || null;
 
   const metaTags = [
     ...(user.astrology_title ? [{ label: user.astrology_title, type: 'meta', icon: getZodiacIcon(user.astrology_title) }] : []),
     ...(user.situation ? [{ label: user.situation, type: 'meta', icon: 'heart-outline' }] : []),
+    ...(vibeLabel ? [{ label: vibeLabel, type: 'vibe', icon: 'sparkles-outline' }] : []),
+    ...(dispoLabel ? [{ label: dispoLabel, type: 'dispo', icon: 'calendar-outline' }] : []),
   ].filter((t) => t.label);
   const sportTags = sports.slice(0, 2).map((s) => ({ label: s, type: 'sport', icon: 'barbell-outline' }));
   const hobbyTags = hobbies.slice(0, 2).map((h) => ({ label: h, type: 'hobby', icon: 'color-palette-outline' }));
@@ -229,6 +234,8 @@ function SwipeCard({ user, onSwipe, isTop }) {
   const tagStyle = (type) => {
     if (type === 'sport') return { bg: '#EDE9FE', text: '#6D28D9', icon: '#6D28D9' };
     if (type === 'hobby') return { bg: '#FFF0F3', text: '#CC3D5E', icon: PALETTE.rose };
+    if (type === 'vibe')  return { bg: '#FFF0F3', text: '#CC3D5E', icon: PALETTE.rose };
+    if (type === 'dispo') return { bg: '#E0F2FE', text: '#0369A1', icon: '#0369A1' };
     return { bg: '#F3F4F6', text: PALETTE.textDark, icon: PALETTE.textMid };
   };
 
@@ -453,7 +460,6 @@ export default function SwipeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, { color: colors.text }]}>Découvrir</Text>
@@ -464,7 +470,6 @@ export default function SwipeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Card stack */}
       <View style={styles.cardStack}>
         {users.length === 0 ? (
           <View style={styles.emptyState}>
@@ -488,17 +493,13 @@ export default function SwipeScreen() {
               const displayCount = Math.min(users.length, 5);
               const isDismissing = dismissingIds.has(user.id);
 
-              // Compute the target stack index (0 = top card)
               let stackIndex;
               if (isDismissing) {
-                // Keep its pre-dismiss position during fly-off animation
                 stackIndex = displayCount - 1 - visualIndex;
               } else {
-                // New position based on visible (non-dismissing) order
                 stackIndex = visibleUsers.indexOf(user);
               }
 
-              // Only the new top card (first visible) is interactive
               const isTop = !isDismissing && stackIndex === 0;
 
               return (
@@ -542,6 +543,18 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '800',
     letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  refreshCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,107,138,0.1)',
   },
   refreshBtn: {
     fontSize: 28,

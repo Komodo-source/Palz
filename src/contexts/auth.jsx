@@ -73,6 +73,8 @@ export function AuthProvider({ children }) {
 
     setToken(newToken);
     setUser(newUser);
+
+    return newToken;
   }, []);
 
   const googleLogin = useCallback(async (userData, authToken) => {

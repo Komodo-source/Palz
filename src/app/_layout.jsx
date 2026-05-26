@@ -2,9 +2,11 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
+
+const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
 function RootNavigator() {
   const colorScheme = useColorScheme();
@@ -25,9 +27,14 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
+      <StripeProvider
+        publishableKey={STRIPE_PK}
+        merchantIdentifier="merchant.com.palz"
+      >
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </StripeProvider>
     </GestureHandlerRootView>
   );
 }

@@ -270,7 +270,7 @@ export default function ProfileScreen() {
           </View>
           {!user?.is_premium && (
             <TouchableOpacity
-              onPress={() => router.push('/(tabs)/profil/payement_page')}
+              onPress={() => router.push('/(tabs)/settings/list_settings')}
               style={styles.upgradeBtn}
               activeOpacity={0.8}
             >
@@ -290,6 +290,18 @@ export default function ProfileScreen() {
         <Text style={styles.editButtonText}>Modifier mon profil</Text>
       </TouchableOpacity>
 
+
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={() => router.push('/(tabs)/')}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
+        <Text style={styles.logoutText}>Paramètre</Text>
+      </TouchableOpacity>
+
+
+
       {/* Logout */}
       <TouchableOpacity
         style={styles.logoutButton}
@@ -299,6 +311,8 @@ export default function ProfileScreen() {
         <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
         <Text style={styles.logoutText}>Se déconnecter</Text>
       </TouchableOpacity>
+
+
 
       <Text style={[styles.version, { color: colors.textSecondary }]}>
         Palz v1.0.0 · Fait avec amour

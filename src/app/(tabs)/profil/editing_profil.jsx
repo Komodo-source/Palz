@@ -103,6 +103,18 @@ export default function ProfileEditingScreen() {
   const [userLocation, setUserLocation] = useState(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
+  // ── Prompt Q&A ──
+  const [promptQuestion, setPromptQuestion] = useState(user?.prompt_question || '');
+  const [promptAnswer, setPromptAnswer] = useState(user?.prompt_answer || '');
+  const [showPromptPicker, setShowPromptPicker] = useState(false);
+
+  // ── Labels (Vibe / Dispo / IRL) ──
+  const [labels, setLabels] = useState(
+    user?.labels && typeof user.labels === 'object'
+      ? { vibe: user.labels.vibe || [], dispo: user.labels.dispo || [], irl: user.labels.irl || [] }
+      : { vibe: [], dispo: [], irl: [] }
+  );
+
   // ── Audio / Fun Fact ──
   const [isRecording, setIsRecording] = useState(false);
   const [recordedAudioUri, setRecordedAudioUri] = useState(null);
@@ -158,6 +170,12 @@ export default function ProfileEditingScreen() {
 
       if (user.voice_fun_fact) {
         setRecordedAudioUri(getStorageUrl(user.voice_fun_fact));
+      }
+
+      if (user.prompt_question) setPromptQuestion(user.prompt_question);
+      if (user.prompt_answer) setPromptAnswer(user.prompt_answer);
+      if (user.labels && typeof user.labels === 'object') {
+        setLabels({ vibe: user.labels.vibe || [], dispo: user.labels.dispo || [], irl: user.labels.irl || [] });
       }
 
       if (user.latitude && user.longitude) {
@@ -466,6 +484,14 @@ export default function ProfileEditingScreen() {
         updateData.profile_image = allPhotos;
       }
 
+      // Prompt Q&A
+      if (promptQuestion !== (user?.prompt_question || '')) updateData.prompt_question = promptQuestion || null;
+      if (promptAnswer !== (user?.prompt_answer || '')) updateData.prompt_answer = promptAnswer || null;
+
+      // Labels
+      const origLabels = user?.labels && typeof user.labels === 'object' ? user.labels : { vibe: [], dispo: [], irl: [] };
+      if (JSON.stringify(labels) !== JSON.stringify(origLabels)) updateData.labels = labels;
+
       // Voice fun fact — only include when changed
       if (voiceFunFactChanged) {
         updateData.voice_fun_fact = recordedAudioUri
@@ -598,6 +624,111 @@ export default function ProfileEditingScreen() {
             textAlignVertical="top"
           />
           <Text style={styles.charCount}>{bio.length}/500</Text>
+        </View>
+
+        {/* ── Prompt Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Mon prompt</Text>
+          </View>
+          <Text style={styles.sectionHint}>Réponds à une question pour te démarquer</Text>
+          <TouchableOpacity style={styles.situationSelector} onPress={() => setShowPromptPicker(true)} activeOpacity={0.7}>
+            <Text style={[styles.situationText, !promptQuestion && styles.placeholderText]} numberOfLines={1}>
+              {promptQuestion || 'Choisis une question…'}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={PALETTE.rose} />
+          </TouchableOpacity>
+          {promptQuestion ? (
+            <TextInput
+              style={[styles.textArea, { marginTop: 10 }]}
+              placeholder="Ta réponse (150 caractères max)…"
+              placeholderTextColor={PALETTE.textLight}
+              value={promptAnswer}
+              onChangeText={setPromptAnswer}
+              multiline
+              numberOfLines={3}
+              maxLength={150}
+              textAlignVertical="top"
+            />
+          ) : null}
+          {promptAnswer.length > 0 && <Text style={styles.charCount}>{promptAnswer.length}/150</Text>}
+        </View>
+
+        {/* Prompt picker modal */}
+        <Modal visible={showPromptPicker} transparent animationType="slide" onRequestClose={() => setShowPromptPicker(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPromptPicker(false)}>
+            <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Choisis une question</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {[
+                  'Mon week-end idéal…',
+                  'On me dit souvent que…',
+                  'Je cherche quelqu\'un pour…',
+                  'Ma chanson du moment c\'est…',
+                  'Je suis vraiment fière de…',
+                  'Mon guilty pleasure c\'est…',
+                  'La prochaine aventure sur ma liste…',
+                  'Je rigole toujours quand…',
+                  'Deux vérités et un mensonge…',
+                  'La chose que j\'adorerais partager avec une amie…',
+                  'Mon super-pouvoir secret c\'est…',
+                  'Ce qui me rend unique dans un groupe…',
+                ].map((q) => (
+                  <TouchableOpacity
+                    key={q}
+                    style={[styles.zodiacOption, promptQuestion === q && styles.situationOptionSelected]}
+                    onPress={() => { setPromptQuestion(q); setShowPromptPicker(false); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.situationOptionText, promptQuestion === q && styles.situationOptionTextSelected]}>{q}</Text>
+                    {promptQuestion === q && <Ionicons name="checkmark" size={16} color={PALETTE.rose} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ── Labels Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="pricetag-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Mes étiquettes</Text>
+          </View>
+          <Text style={styles.sectionHint}>Choisis jusqu'à 3 par catégorie</Text>
+          {[
+            { key: 'vibe', title: 'Vibe', color: '#CC3D5E', bg: '#FFF0F3', options: ['Créative','Sportive','Homebody','Spontanée','Ambitieuse','Artiste','Voyageuse','Bookworm','Foodie','Geek'] },
+            { key: 'dispo', title: 'Dispo', color: '#0369A1', bg: '#E0F2FE', options: ['Soirées','Brunchs','Voyages','Sport','Musées/Expos','Concerts','Apéros','Randos','Cinéma','Yoga'] },
+            { key: 'irl', title: 'IRL', color: '#6D28D9', bg: '#E8D5F5', options: ['Chien','Chat','Voiture','Propriétaire','Locataire','Non-fumeur','Végétarienne','Étudiante','Freelance','Télétravail'] },
+          ].map(({ key, title, color, bg, options }) => (
+            <View key={key} style={{ marginBottom: 14 }}>
+              <Text style={[styles.labelCategoryTitle, { color }]}>{title}</Text>
+              <View style={styles.labelsWrap}>
+                {options.map((opt) => {
+                  const selected = labels[key]?.includes(opt);
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.labelChip, { backgroundColor: selected ? bg : 'transparent', borderColor: selected ? color : '#DDD' }]}
+                      onPress={() => {
+                        setLabels((prev) => {
+                          const arr = prev[key] || [];
+                          if (arr.includes(opt)) return { ...prev, [key]: arr.filter((x) => x !== opt) };
+                          if (arr.length >= 3) return prev;
+                          return { ...prev, [key]: [...arr, opt] };
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.labelChipText, { color: selected ? color : PALETTE.textMid }]}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </View>
 
         {/* ── Work Section ── */}
@@ -1070,6 +1201,28 @@ const styles = StyleSheet.create({
     minHeight: 110,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  labelCategoryTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  labelsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  labelChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  labelChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   charCount: {
     textAlign: 'right',

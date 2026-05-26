@@ -29,9 +29,9 @@ const CATEGORY_META = {
 };
 
 const FILTERS = [
-  { key: null,    label: 'Tous' },
-  { key: 'today', label: "Aujourd'hui" },
-  { key: 'joined', label: 'Rejoints' },
+  { key: null,    label: 'Tous', icon : "apps-outline"},
+  { key: 'tonight', label: "Ce soir", icon: "moon-outline"},
+  { key: 'joined', label: 'Rejoints', icon: "checkmark-circle-outline"},
 ];
 
 const CATEGORY_FILTERS = [
@@ -93,6 +93,20 @@ export default function EventsScreen() {
     });
   }, [eventsRaw, nearMe, userLocation]);
 
+  // Events starting tonight (today, 17h–23h59, not yet started)
+  const ceSoirEvents = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toDateString();
+    return eventsRaw.filter((e) => {
+      const d = new Date(e.starts_at);
+      return (
+        d.toDateString() === todayStr &&
+        d.getHours() >= 17 &&
+        d > now
+      );
+    });
+  }, [eventsRaw]);
+
   const fetchEvents = useCallback(async (filter, category) => {
     try {
       const res = await eventsApi.getEvents(filter, category);
@@ -114,7 +128,7 @@ export default function EventsScreen() {
 
   const handleFilterChange = (key) => {
     setActiveFilter(key);
-    setLoading(true);
+    //setLoading(true);
     fetchEvents(key, activeCategory);
   };
 
@@ -167,6 +181,57 @@ export default function EventsScreen() {
     } finally {
       setJoiningId(null);
     }
+  };
+
+  const renderCeSoirCard = (item) => {
+    const meta = CATEGORY_META[item.category] || CATEGORY_META.autre;
+    const isFull = item.member_count >= item.max_members;
+    const time = new Date(item.starts_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    return (
+      <TouchableOpacity
+        key={String(item.id)}
+        style={styles.ceSoirCard}
+        onPress={() => router.push(`/(tabs)/event/${item.id}`)}
+        activeOpacity={0.85}
+      >
+        <View style={[styles.ceSoirIconWrap, { backgroundColor: meta.color + '25' }]}>
+          <Ionicons name={meta.icon} size={26} color={meta.color} />
+        </View>
+        <Text style={styles.ceSoirTime}>{time}</Text>
+        <Text style={styles.ceSoirTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.ceSoirLocation} numberOfLines={1}>{item.location_name}</Text>
+        <View style={[styles.ceSoirFooter]}>
+          <Ionicons name="people-outline" size={12} color="rgba(255,255,255,0.7)" />
+          <Text style={styles.ceSoirMembers}>{item.member_count}/{item.max_members}</Text>
+          {isFull && <Text style={styles.ceSoirFull}>Complet</Text>}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const CeSoirSection = () => {
+    if (ceSoirEvents.length === 0) return null;
+    return (
+      <View style={styles.ceSoirSection}>
+        <View style={styles.ceSoirHeader}>
+          <View style={styles.ceSoirTitleRow}>
+            <Text style={styles.ceSoirSectionEmoji}>🌙</Text>
+            <Text style={[styles.ceSoirSectionTitle, { color: colors.text }]}>Ce soir</Text>
+          </View>
+          <Text style={[styles.ceSoirSectionSub, { color: colors.textSecondary }]}>
+            {ceSoirEvents.length} sortie{ceSoirEvents.length > 1 ? 's' : ''} ce soir
+          </Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.ceSoirScroll}
+        >
+          {ceSoirEvents.map(renderCeSoirCard)}
+        </ScrollView>
+      </View>
+    );
   };
 
   const renderCard = ({ item }) => {
@@ -327,6 +392,7 @@ export default function EventsScreen() {
             >
               {f.label}
             </Text>
+            <Ionicons name={String(f.icon)} size={13} color={"#fff"}></Ionicons>
           </TouchableOpacity>
         ))}
 
@@ -395,6 +461,7 @@ export default function EventsScreen() {
         onRefresh={() => { setRefreshing(true); fetchEvents(activeFilter, activeCategory); }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={<CeSoirSection />}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
@@ -574,4 +641,86 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   emptyCreateBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  // ── Ce soir ──
+  ceSoirSection: {
+    marginBottom: 8,
+  },
+  ceSoirHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
+    marginBottom: 10,
+  },
+  ceSoirTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ceSoirSectionEmoji: { fontSize: 20 },
+  ceSoirSectionTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  ceSoirSectionSub: { fontSize: 12, fontWeight: '500' },
+  ceSoirScroll: {
+    paddingHorizontal: Spacing.four,
+    gap: 10,
+  },
+  ceSoirCard: {
+    width: 140,
+    borderRadius: 20,
+    padding: 14,
+    gap: 6,
+    backgroundColor: '#1A1035',
+    shadowColor: '#6D28D9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  ceSoirIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  ceSoirTime: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#A78BFA',
+    letterSpacing: 0.3,
+  },
+  ceSoirTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+    lineHeight: 18,
+  },
+  ceSoirLocation: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '500',
+  },
+  ceSoirFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  ceSoirMembers: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+    flex: 1,
+  },
+  ceSoirFull: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#EF4444',
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
 });

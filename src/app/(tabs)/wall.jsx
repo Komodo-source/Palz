@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -306,8 +306,18 @@ export default function WallScreen() {
     );
   };
 
-  const leftPosts = posts.filter((_, i) => i % 2 === 0);
-  const rightPosts = posts.filter((_, i) => i % 2 === 1);
+  // One post per user — most recent wins (posts are already sorted newest-first)
+  const displayPosts = useMemo(() => {
+    const seen = new Set();
+    return posts.filter((p) => {
+      if (seen.has(p.user_initiator)) return false;
+      seen.add(p.user_initiator);
+      return true;
+    });
+  }, [posts]);
+
+  const leftPosts = displayPosts.filter((_, i) => i % 2 === 0);
+  const rightPosts = displayPosts.filter((_, i) => i % 2 === 1);
 
   if (loading) {
     return (
@@ -364,7 +374,7 @@ export default function WallScreen() {
       </View>
 
       {/* ── Content ── */}
-      {posts.length === 0 ? (
+      {displayPosts.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
             <Ionicons name="images-outline" size={36} color={PALETTE.rose} />

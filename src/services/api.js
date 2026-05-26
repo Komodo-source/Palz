@@ -107,8 +107,9 @@ export const uploadApi = {
    * @param {object} params - { uri: string, fileName?: string, mimeType?: string }
    * Returns { url: string, filename: string }
    */
-  uploadImage: async ({ uri, fileName, mimeType }) => {
-    const token = await storage.getItem('auth_token');
+  uploadImage: async ({ uri, fileName, mimeType, token: providedToken }) => {
+    const token = providedToken || await storage.getItem('auth_token');
+    console.log('[uploadImage] Token:', token ? `${token.substring(0, 20)}...` : 'NULL/UNDEFINED', '| from:', providedToken ? 'param' : 'storage');
     const formData = new FormData();
     formData.append('file', {
       uri,
@@ -125,9 +126,11 @@ export const uploadApi = {
       body: formData,
     });
 
+    console.log('[uploadImage] Response status:', res.status);
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || 'Upload failed');
+      const errBody = await res.json().catch(() => ({ error: 'Upload failed' }));
+      console.log('[uploadImage] Error body:', JSON.stringify(errBody));
+      throw new Error(errBody.error || 'Upload failed');
     }
 
     return res.json();
@@ -138,8 +141,8 @@ export const uploadApi = {
    * @param {object} params - { uri: string, fileName?: string, mimeType?: string }
    * Returns { url: string, filename: string }
    */
-  uploadAudio: async ({ uri, fileName, mimeType }) => {
-    const token = await storage.getItem('auth_token');
+  uploadAudio: async ({ uri, fileName, mimeType, token: providedToken }) => {
+    const token = providedToken || await storage.getItem('auth_token');
     const formData = new FormData();
     formData.append('file', {
       uri,
@@ -181,7 +184,9 @@ export const swipesApi = {
 export const messagesApi = {
   getConversations: () => api.get('/messages/conversations'),
   getMessages: (conversationId) => api.get(`/messages/${conversationId}`),
+  updateStreak: (conversationId) => api.post(`/messages/update_streak`, conversationId),
   sendMessage: (data) => api.post('/messages/send', data),
+  genrateIceBreaker: (data) => api.post('/messages/generate_personnal_iceBreaker', data),
   startConversation: (otherUserId) => api.post('/messages/start', { other_user_id: otherUserId }),
 };
 
@@ -208,6 +213,14 @@ export const groupsApi = {
   submitMemberVotes: (weeklyGroupId, votes) =>
     api.post('/groups/member-vote', { weekly_group_id: weeklyGroupId, votes }),
   getMemberVotes: (weeklyGroupId) => api.get(`/groups/${weeklyGroupId}/member-votes`),
+  submitDissolutionFeedback: (weeklyGroupId, groupRating, memberRatings) =>
+    api.post('/groups/dissolution-feedback', {
+      weekly_group_id: weeklyGroupId,
+      group_rating: groupRating,
+      member_ratings: memberRatings,
+    }),
+  voteActivity: (weeklyGroupId, suggestionIndex) =>
+    api.post(`/groups/${weeklyGroupId}/activity-vote`, { suggestion_index: suggestionIndex }),
 };
 
 // ── Events ──
@@ -223,7 +236,8 @@ export const eventsApi = {
   joinEvent: (id) => api.post(`/events/${id}/join`),
   leaveEvent: (id) => api.post(`/events/${id}/leave`),
   getMessages: (id) => api.get(`/events/${id}/messages`),
-  sendMessage: (id, content) => api.post(`/events/${id}/messages`, { content }),
+  sendMessage: (id, data) =>
+    api.post(`/events/${id}/messages`, typeof data === 'string' ? { content: data } : data),
 };
 
 // ── Constant Data (zodiac, sports, hobbies) ──
@@ -232,6 +246,14 @@ export const constantDataApi = {
   getSports: () => api.get('/constant_data/get_sports'),
   getHobbies: () => api.get('/constant_data/get_hobbies'),
   getTypeSearch: () => api.get('/constant_data/get_type_search'),
+};
+
+// ── Payments ──
+export const paymentsApi = {
+  createPaymentSheet: () => api.post('/payments/create-payment-sheet'),
+  confirm: (paymentIntentId) => api.post('/payments/confirm', { payment_intent_id: paymentIntentId }),
+  getStatus: () => api.get('/payments/status'),
+  cancel: () => api.post('/payments/cancel'),
 };
 
 export default api;

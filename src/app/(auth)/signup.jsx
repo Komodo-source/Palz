@@ -94,6 +94,10 @@ export default function SignupScreen() {
     ]);
   };
 
+  const debugHandle = () => {
+    router.replace('/onboarding');
+  }
+
   const UpgradeStep = () => {
     if (!email.trim() || !userName.trim() || !fullName.trim()) {
       Alert.alert('Oups', 'Remplis tous les champs');
@@ -140,7 +144,7 @@ export default function SignupScreen() {
         }
       }
 
-      await signup({
+      const newToken = await signup({
         full_name: fullName.trim(),
         user_name: userName.trim(),
         email: email.trim(),
@@ -149,16 +153,20 @@ export default function SignupScreen() {
         phone: phone || undefined,
       });
 
-      // Upload profile photo after account is created (token is now stored)
+      console.log('[Signup] Token received:', newToken ? `${newToken.substring(0, 20)}...` : 'NULL/UNDEFINED');
+
+      // Upload profile photo after account is created (token passed directly to avoid storage race)
       if (profilePhotoUri) {
         setUploadingPhoto(true);
         try {
           const ext = profilePhotoUri.split('.').pop() || 'jpg';
           const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+          console.log('[Signup] Uploading photo with token:', newToken ? `${newToken.substring(0, 20)}...` : 'NULL');
           const { url } = await uploadApi.uploadImage({
             uri: profilePhotoUri,
             fileName: `profile.${ext}`,
             mimeType,
+            token: newToken,
           });
           // Extract just the filename stored in Supabase
           const filename = url.includes('/') ? url.split('/').pop() : url;
@@ -228,6 +236,12 @@ export default function SignupScreen() {
               value={fullName}
               onChangeText={setFullName}
             />
+            <TouchableOpacity
+              onPress={() => debugHandle()}
+            >
+              <Text>test</Text>
+
+            </TouchableOpacity>
 
             <Text style={styles.label}>Pseudo *</Text>
             <TextInput

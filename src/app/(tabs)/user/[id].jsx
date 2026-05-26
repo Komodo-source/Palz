@@ -9,17 +9,20 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { usersApi, swipesApi, wallApi } from '@/services/api';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { usersApi, swipesApi, wallApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { getProfileImages, parseDbJson } from '@/utils/parsers';
 import { useAuth } from '@/contexts/auth';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GALLERY_HEIGHT = SCREEN_WIDTH * 1.15;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const GALLERY_HEIGHT = Math.round(SCREEN_HEIGHT * 0.74);
+const SUPABASE_PHOTOS_URL = 'https://kcglwtoegceicruwmxzo.supabase.co/storage/v1/object/public/user_photos/';
 
 function calculateAge(dateStr) {
   if (!dateStr) return null;
@@ -39,17 +42,40 @@ const ZODIAC_ICONS = {
 };
 
 function parseInterests(user) {
-  try {
-    const raw = user.interests;
-    if (!raw) return { sports: [], hobbies: [] };
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return {
-      sports: Array.isArray(parsed.sports) ? parsed.sports : [],
-      hobbies: Array.isArray(parsed.hobbies) ? parsed.hobbies : [],
-    };
-  } catch {
-    return { sports: [], hobbies: [] };
-  }
+  const sports = Array.isArray(user.sports) ? user.sports : (parseDbJson(user.sports) || []);
+  const hobbies = Array.isArray(user.hobbies) ? user.hobbies : (parseDbJson(user.hobbies) || []);
+  return { sports, hobbies };
+}
+
+function VoiceFunFactPlayer({ uri, colors }) {
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
+
+  const handlePress = () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      player.seekTo(0);
+      player.play();
+    }
+  };
+
+  return (
+    <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="mic-outline" size={16} color={PALETTE.rose} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Ice Breaker</Text>
+      </View>
+      <TouchableOpacity style={styles.voiceRow} onPress={handlePress} activeOpacity={0.7}>
+        <View style={[styles.voicePlayBtn, { backgroundColor: PALETTE.rose }]}>
+          <Ionicons name={status.playing ? 'pause' : 'play'} size={18} color="#fff" />
+        </View>
+        <Text style={[styles.voiceLabel, { color: colors.textSecondary }]}>
+          {status.playing ? 'En cours de lecture…' : 'Écouter son anecdote vocale'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 // Derive just the city from a location string like "Paris, France" → "Paris"
@@ -147,27 +173,27 @@ export default function UserDetailScreen() {
 
   const interests = parseInterests(user);
   const photos = getProfileImages(user);
+  console.log("user_photo", photos)
   const age = calculateAge(user.date_of_birth);
   const city = cityOnly(user.location);
   const photoCount = photos.length;
   const memberWeeks = user.created_at
     ? Math.max(1, Math.floor((Date.now() - new Date(user.created_at).getTime()) / (7 * 24 * 3600_000)))
     : 1;
-  const profileScore = Math.min(100,
-    (photoCount >= 1 ? 20 : 0) +
-    (photoCount >= 3 ? 10 : 0) +
-    (user.bio ? 25 : 0) +
-    (interests.sports.length > 0 ? 15 : 0) +
-    (interests.hobbies.length > 0 ? 15 : 0) +
-    (user.astrology_title ? 10 : 0) +
-    (user.situation ? 5 : 0)
-  );
+
 
   const lifestyleBadges = [
+    ...(user.is_premium ? [{ icon: 'star', label: 'Premium', bg: '#FFF9E6', color: '#D97706' }] : []),
     ...(user.astrology_title ? [{ icon: ZODIAC_ICONS[user.astrology_title] || 'star-outline', label: user.astrology_title, bg: '#FFF0F3', color: '#CC3D5E' }] : []),
     ...(user.situation ? [{ icon: 'heart-outline', label: user.situation, bg: '#E8D5F5', color: '#6D28D9' }] : []),
     ...(user.work ? [{ icon: 'briefcase-outline', label: user.work, bg: '#E0F2FE', color: '#0369A1' }] : []),
   ];
+
+  const reliabilityStars = Math.min(3, Math.max(1, user.reliability_score || 1));
+  const rawLabels = user.labels && typeof user.labels === 'string' ? JSON.parse(user.labels) : (user.labels || {});
+  const vibeLabels = Array.isArray(rawLabels.vibe) ? rawLabels.vibe : [];
+  const dispoLabels = Array.isArray(rawLabels.dispo) ? rawLabels.dispo : [];
+  const irlLabels = Array.isArray(rawLabels.irl) ? rawLabels.irl : [];
 
   const headerOpacity = scrollY.interpolate({ inputRange: [GALLERY_HEIGHT - 80, GALLERY_HEIGHT], outputRange: [0, 1], extrapolate: 'clamp' });
 
@@ -201,43 +227,65 @@ export default function UserDetailScreen() {
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) => setActivePhoto(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}
+              onMomentumScrollEnd={(e) =>
+                setActivePhoto(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))
+              }
               scrollEventThrottle={16}
             >
-              {photos.map((uri, i) => (
-                <Image key={i} source={{ uri }} style={styles.galleryImage} />
-              ))}
+              {photos.map((item, index) => {
+                const uri = `${SUPABASE_PHOTOS_URL}${item}`;
+                return (
+                  <Image key={index} source={{ uri }} style={styles.galleryImage} resizeMode="cover" />
+                );
+              })}
             </ScrollView>
           ) : (
             <View style={[styles.galleryPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
-              <Text style={{ fontSize: 64 }}>🌸</Text>
+              <Text style={{ fontSize: 72 }}>🌸</Text>
             </View>
           )}
 
-          {/* Photo progress dots */}
+          {/* Bumble-style thin progress bars */}
           {photos.length > 1 && (
-            <View style={styles.photoDots}>
+            <View style={styles.photoBars}>
               {photos.map((_, i) => (
                 <View
                   key={i}
-                  style={[styles.photoDot, { flex: i === activePhoto ? 2 : 1, backgroundColor: i === activePhoto ? '#fff' : 'rgba(255,255,255,0.4)' }]}
+                  style={[
+                    styles.photoBar,
+                    {
+                      backgroundColor:
+                        i === activePhoto
+                          ? '#fff'
+                          : i < activePhoto
+                          ? 'rgba(255,255,255,0.75)'
+                          : 'rgba(255,255,255,0.35)',
+                    },
+                  ]}
                 />
               ))}
             </View>
           )}
 
-          {/* Gradient at bottom of gallery fading to page bg */}
-          <View style={styles.galleryGradient} />
+          {/* Layered gradient overlay — transparent → dark at bottom */}
+          <View style={styles.galleryGradient} pointerEvents="none">
+            <View style={styles.gradLayer0} />
+            <View style={styles.gradLayer1} />
+            <View style={styles.gradLayer2} />
+            <View style={styles.gradLayer3} />
+            <View style={styles.gradLayer4} />
+            <View style={styles.gradLayer5} />
+          </View>
 
-          {/* Name overlay at bottom of gallery */}
+          {/* Name / age / location overlay */}
           <View style={styles.galleryNameBlock}>
-            <Text style={styles.galleryName}>
+            <Text style={styles.galleryName} numberOfLines={1}>
               {user.full_name || user.user_name}
               {age ? <Text style={styles.galleryAge}>, {age}</Text> : null}
             </Text>
             {city ? (
               <View style={styles.galleryLocRow}>
-                <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.85)" />
+                <Ionicons name="location-outline" size={15} color="rgba(255,255,255,0.9)" />
                 <Text style={styles.galleryLoc}>{city}</Text>
               </View>
             ) : null}
@@ -271,10 +319,15 @@ export default function UserDetailScreen() {
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.backgroundSelected }]} />
           <View style={styles.statItem}>
-            <Ionicons name="sparkles-outline" size={22} color="#0369A1" />
-            <Text style={[styles.statValue, { color: colors.text }]}>{profileScore}%</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Profil</Text>
+            <Text style={styles.reliabilityStars}>{'★'.repeat(reliabilityStars)}{'☆'.repeat(3 - reliabilityStars)}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Fiabilité</Text>
           </View>
+           {/*<View style={[styles.statDivider, { backgroundColor: colors.backgroundSelected }]} />
+          <View style={styles.statItem}>
+            <Ionicons name="sparkles-outline" size={22} color="#0369A1" />
+           <Text style={[styles.statValue, { color: colors.text }]}>{profileScore}%</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Profil</Text>
+          </View>*/}
         </View>
 
         {/* ── À propos ── */}
@@ -283,6 +336,68 @@ export default function UserDetailScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>À propos</Text>
             <Text style={[styles.bioText, { color: colors.textSecondary }]}>{user.bio}</Text>
           </View>
+        ) : null}
+
+        {/* ── Prompt Q&A ── */}
+        {user.prompt_question && user.prompt_answer ? (
+          <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+            <View style={styles.promptQuestion}>
+              <Ionicons name="chatbubble-ellipses-outline" size={14} color={PALETTE.rose} />
+              <Text style={[styles.promptQuestionText, { color: PALETTE.rose }]}>{user.prompt_question}</Text>
+            </View>
+            <Text style={[styles.promptAnswer, { color: colors.text }]}>{user.prompt_answer}</Text>
+          </View>
+        ) : null}
+
+        {/* ── Labels: Vibe / Dispo / IRL ── */}
+        {(vibeLabels.length > 0 || dispoLabels.length > 0 || irlLabels.length > 0) && (
+          <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="pricetag-outline" size={16} color={PALETTE.rose} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Étiquettes</Text>
+            </View>
+            {vibeLabels.length > 0 && (
+              <View style={styles.labelGroup}>
+                <Text style={[styles.labelGroupTitle, { color: colors.textSecondary }]}>Vibe</Text>
+                <View style={styles.chipsWrap}>
+                  {vibeLabels.map((l, i) => (
+                    <View key={i} style={[styles.chip, { backgroundColor: '#FFF0F3' }]}>
+                      <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{l}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            {dispoLabels.length > 0 && (
+              <View style={styles.labelGroup}>
+                <Text style={[styles.labelGroupTitle, { color: colors.textSecondary }]}>Dispo</Text>
+                <View style={styles.chipsWrap}>
+                  {dispoLabels.map((l, i) => (
+                    <View key={i} style={[styles.chip, { backgroundColor: '#E0F2FE' }]}>
+                      <Text style={[styles.chipText, { color: '#0369A1' }]}>{l}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            {irlLabels.length > 0 && (
+              <View style={styles.labelGroup}>
+                <Text style={[styles.labelGroupTitle, { color: colors.textSecondary }]}>IRL</Text>
+                <View style={styles.chipsWrap}>
+                  {irlLabels.map((l, i) => (
+                    <View key={i} style={[styles.chip, { backgroundColor: '#E8D5F5' }]}>
+                      <Text style={[styles.chipText, { color: '#6D28D9' }]}>{l}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ── Ice Breaker (voice fun fact) ── */}
+        {user.voice_fun_fact ? (
+          <VoiceFunFactPlayer uri={getStorageUrl(user.voice_fun_fact)} colors={colors} />
         ) : null}
 
         {/* ── Sports ── */}
@@ -324,12 +439,14 @@ export default function UserDetailScreen() {
           <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
             <View style={styles.sectionHeader}>
               <Ionicons name="images-outline" size={16} color={PALETTE.rose} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Photos du mur</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Photos de la toile</Text>
             </View>
             <View style={styles.wallGrid}>
               {wallPosts.map((post, i) => {
                 const rawPhotos = parseDbJson(post.wall_photo);
+                console.log("rawPhotos", rawPhotos);
                 const uri = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? rawPhotos[0] : null;
+                console.log("uri", uri);
                 return uri ? (
                   <Image key={String(post.id)} source={{ uri }} style={styles.wallThumb} />
                 ) : null;
@@ -397,40 +514,60 @@ const styles = StyleSheet.create({
   stickyName: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
 
   // ── Gallery ──
-  galleryContainer: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT, position: 'relative' },
-  galleryImage: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT, resizeMode: 'cover' },
+  galleryContainer: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT, position: 'relative', overflow: 'hidden' },
+  galleryImage: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT },
   galleryPlaceholder: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT, alignItems: 'center', justifyContent: 'center' },
 
-  photoDots: {
+  // Bumble-style thin progress bars
+  photoBars: {
     position: 'absolute',
-    top: 56,
-    left: 16,
-    right: 16,
+    top: Platform.OS === 'ios' ? 58 : 44,
+    left: 12,
+    right: 12,
     flexDirection: 'row',
-    gap: 4,
+    gap: 5,
+    zIndex: 10,
   },
-  photoDot: { height: 3, borderRadius: 2 },
+  photoBar: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+  },
 
+  // Layered gradient (transparent → dark)
   galleryGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 180,
-    // layered from transparent → dark
-    backgroundColor: 'transparent',
+    height: 260,
+    flexDirection: 'column',
   },
+  gradLayer0: { flex: 1, backgroundColor: 'transparent' },
+  gradLayer1: { flex: 1, backgroundColor: 'rgba(0,0,0,0.06)' },
+  gradLayer2: { flex: 1, backgroundColor: 'rgba(0,0,0,0.14)' },
+  gradLayer3: { flex: 1, backgroundColor: 'rgba(0,0,0,0.26)' },
+  gradLayer4: { flex: 1, backgroundColor: 'rgba(0,0,0,0.40)' },
+  gradLayer5: { flex: 1, backgroundColor: 'rgba(0,0,0,0.56)' },
 
   galleryNameBlock: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 24,
     left: 20,
     right: 20,
   },
-  galleryName: { fontSize: 30, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
-  galleryAge: { fontSize: 26, fontWeight: '500' },
-  galleryLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  galleryLoc: { fontSize: 14, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+  galleryName: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  galleryAge: { fontSize: 28, fontWeight: '400' },
+  galleryLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  galleryLoc: { fontSize: 14, color: 'rgba(255,255,255,0.9)', fontWeight: '500', letterSpacing: 0.2 },
 
   // ── Lifestyle badges ──
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
@@ -475,6 +612,23 @@ const styles = StyleSheet.create({
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14 },
   chipText: { fontSize: 13, fontWeight: '600' },
+
+  // ── Reliability stars ──
+  reliabilityStars: { fontSize: 18, color: '#D97706', letterSpacing: 1 },
+
+  // ── Prompt Q&A ──
+  promptQuestion: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  promptQuestionText: { fontSize: 13, fontWeight: '700', fontStyle: 'italic', flex: 1 },
+  promptAnswer: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
+
+  // ── Labels ──
+  labelGroup: { marginBottom: 10 },
+  labelGroupTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+
+  // ── Voice ice breaker ──
+  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+  voicePlayBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  voiceLabel: { fontSize: 14, fontWeight: '500', flex: 1 },
 
   // ── Wall post grid ──
   wallGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },

@@ -23,6 +23,26 @@ import { COMPATIBILITY_QUESTIONS, getDefaultAnswers } from '@/utils/compatibilit
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 
+// Native-only modules — only load on Android/iOS, not web
+let Camera = null;
+let RNFS = null;
+let PermissionsModule = null;
+let Video = null;
+if (Platform.OS !== 'web') {
+  try {
+    Camera = require('react-native-vision-camera').Camera;
+  } catch (_) {}
+  try {
+    RNFS = require('react-native-fs').default || require('react-native-fs');
+  } catch (_) {}
+  try {
+    PermissionsModule = require('react-native-permissions');
+  } catch (_) {}
+  try {
+    Video = require('react-native-video').default || require('react-native-video');
+  } catch (_) {}
+}
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_SIZE = (SCREEN_WIDTH - 64) / 3;
 
@@ -53,7 +73,9 @@ const SITUATION_OPTIONS = [
   { label: 'C\'est compliqué', value: 'complique', icon: 'pulse' },
 ];
 
-const TOTAL_STEPS = 10; // zodiac(0) + sports(1) + hobbies(2) + photos(3) + location(4) + situation(5) + relation(6) + compat(7-9)
+const TOTAL_STEPS = 11; // zodiac(0) + sports(1) + hobbies(2) + photos(3) + location(4) + situation(5) + relation(6) + compat(7-9)
+
+
 
 function extractFilename(url) {
   if (!url) return '';
@@ -378,6 +400,11 @@ export default function OnboardingScreen() {
   const [typeSearchOptions, setTypeSearchOptions] = useState([]);
   const [selectedTypeSearch, setSelectedTypeSearch] = useState(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+const [videoPath, setVideoPath] = useState('');
+const cameraRef = useRef();
+
+
   // Compatibility answers
   const [compatAnswers, setCompatAnswers] = useState(getDefaultAnswers());
 
@@ -385,6 +412,91 @@ export default function OnboardingScreen() {
   const slideAnim = useRef(new RNAnimated.Value(0)).current;
   const progressAnim = useRef(new RNAnimated.Value(0)).current;
   const resultOpacity = useRef(new RNAnimated.Value(0)).current;
+
+
+
+  const startRecording = async () => {
+      if (!Camera || !RNFS) {
+        Alert.alert('Non disponible', "L'enregistrement vidéo n'est pas disponible sur cette plateforme.");
+        return;
+      }
+      const hasPermission = await requestCameraPermission();
+      if (!hasPermission) return;
+
+      setIsRecording(true);
+
+      const videoPath = `${RNFS.CachesDirectoryPath}/video.mp4`;
+      setVideoPath(videoPath);
+
+      cameraRef.current.startRecording({
+        quality: '720p',
+        videoBitrate: 2000000,
+        maxDuration: 10,
+        maxFileSize: 100 * 1024 * 1024,
+        outputPath: videoPath,
+      });
+    };
+
+  const stopRecording = async () => {
+    setIsRecording(false);
+    await cameraRef.current.stopRecording();
+  };
+
+   const requestCameraPermission = async () => {
+    if (!PermissionsModule) return false;
+    const { PERMISSIONS, requestMultiple, RESULTS } = PermissionsModule;
+    const statuses = await requestMultiple([
+      PERMISSIONS.ANDROID.CAMERA,
+      PERMISSIONS.ANDROID.RECORD_AUDIO,
+      PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE,
+    ]);
+    return (
+      statuses[PERMISSIONS.ANDROID.CAMERA] === RESULTS.GRANTED &&
+      statuses[PERMISSIONS.ANDROID.RECORD_AUDIO] === RESULTS.GRANTED &&
+      statuses[PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE] === RESULTS.GRANTED
+    );
+  };
+
+
+  function CheckIfWomen(){
+
+    return (
+      <View style={styles.stepContainer}>
+        <View style={styles.stepHeader}>
+          <View style={[styles.iconCircle, { backgroundColor: PALETTE.rosePale }]}>
+            <Ionicons name="star" size={32} color={PALETTE.rose} />
+          </View>
+          <Text style={styles.stepTitle}>Confirmation d'identité</Text>
+
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
+          <Text style={styles.subtitleConfirmation}>Afin de confirmer votre identité veuillez, prendre une courte vidéo de vous suivant les instructions suivantes: </Text>
+          <Text style={styles.instruction}>• Bougez votre tête de gauche à droite, pour chaque face restez au moins 2 secondes</Text>
+          <Text style={styles.instruction}>• mettre 3 doigts devant votre visage</Text>
+
+          <Camera style={styles.camera} ref={cameraRef} />
+            {isRecording ? (
+              <TouchableOpacity style={styles.recordButton} onPress={stopRecording}>
+                <Text style={styles.recordButtonText}>Arêtez</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
+                <Text style={styles.recordButtonText}>Commencer l'enregistrement</Text>
+              </TouchableOpacity>
+            )}
+
+            {videoPath !== '' && (
+              <View style={styles.videoPlayer}>
+                <Video source={{ uri: videoPath }} style={styles.videoPlayer} controls />
+              </View>
+            )}
+
+          <Text style={styles.instruction}>Après la confirmation de notre IA, cette vidéo sera supprimé de nos serveurs</Text>
+        </ScrollView>
+      </View>
+    )
+  }
+
 
   // Load backend data
   useEffect(() => {
@@ -486,7 +598,7 @@ export default function OnboardingScreen() {
   const uploadPhoto = async (uri) => {
     setIsUploadingPhoto(true);
     try {
-      const ext = uri.split('.').pop() || 'jpg';
+      const ext = (uri.match(/\.([a-zA-Z0-9]+)(?:\?|#|$)/)?.[1] ?? 'jpg').toLowerCase();
       const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const { url } = await uploadApi.uploadImage({
         uri,
@@ -682,6 +794,18 @@ export default function OnboardingScreen() {
         ),
       };
     }
+    if (step === 7) {
+      return {
+        canProceed: selectedTypeSearch !== null,
+        component: (
+          <RelationshipStep
+            options={typeSearchOptions}
+            selected={selectedTypeSearch}
+            onSelect={setSelectedTypeSearch}
+          />
+        ),
+      };
+    }
     if (compatIdx >= 0 && compatIdx < COMPATIBILITY_QUESTIONS.length) {
       const q = COMPATIBILITY_QUESTIONS[compatIdx];
       const val = compatAnswers[q.id];
@@ -708,15 +832,13 @@ export default function OnboardingScreen() {
       const updateData = {};
 
       if (zodiacSignId != null) updateData.astrology_sign_id = zodiacSignId;
-      if (selectedSports.length || selectedHobbies.length) {
-        updateData.interests = {
-          sports: selectedSports,
-          hobbies: selectedHobbies,
-          ...compatAnswers,
-        };
-      } else {
-        updateData.interests = { ...compatAnswers };
-      }
+
+      // Interests JSON stores only compatibility answers
+      updateData.interests = { ...compatAnswers };
+
+      // Sports and hobbies go to their own junction tables
+      if (selectedSports.length > 0) updateData.sports = selectedSports;
+      if (selectedHobbies.length > 0) updateData.hobbies = selectedHobbies;
 
       // Photos
       const photoUrls = photos

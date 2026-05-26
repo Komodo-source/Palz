@@ -106,7 +106,7 @@ export default function MessagesScreen() {
     return img ? getStorageUrl(img) : null;
   };
 
-  // ── Match bubble ──
+  // ── Messages not match ──
   const renderMatch = (match) => {
     const img = getAvatar(match.profile_image);
     const name = match.full_name || match.user_name || '?';
@@ -174,6 +174,7 @@ export default function MessagesScreen() {
   const renderItem = ({ item }) => {
     const img = getAvatar(item.other_user_image);
     const isMe = item.last_message_sender_id && item.last_message_sender_id !== item.other_user_id;
+    const streak = item.streak ?? 0;
 
     return (
       <TouchableOpacity
@@ -196,6 +197,11 @@ export default function MessagesScreen() {
             </View>
           )}
           {item.has_unread && <View style={styles.unreadDot} />}
+          {streak >= 2 && (
+            <View style={styles.streakAvatarBadge}>
+              <Text style={styles.streakAvatarText}>🔥</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         <View style={styles.convBody}>
@@ -203,9 +209,16 @@ export default function MessagesScreen() {
             <Text style={[styles.convName, { color: colors.text }]} numberOfLines={1}>
               {item.other_user_name}
             </Text>
-            <Text style={[styles.convTime, { color: colors.textSecondary }]}>
-              {formatTime(item.last_message_at)}
-            </Text>
+            <View style={styles.convTopRight}>
+              {streak >= 2 && (
+                <View style={styles.streakPill}>
+                  <Text style={styles.streakPillText}>{streak}</Text>
+                </View>
+              )}
+              <Text style={[styles.convTime, { color: colors.textSecondary }]}>
+                {formatTime(item.last_message_at)}
+              </Text>
+            </View>
           </View>
           <View style={styles.convBottom}>
             {item.has_unread && <View style={[styles.unreadPip, { backgroundColor: PALETTE.rose }]} />}
@@ -256,7 +269,7 @@ export default function MessagesScreen() {
         </View>
       )}
 
-      {/* Matches row */}
+      {/* Messages row */}
       {matches.length > 0 && (
         <View style={styles.matchesSection}>
           <Text style={[styles.matchesLabel, { color: colors.text }]}>Tes matchs</Text>
@@ -319,7 +332,7 @@ export default function MessagesScreen() {
               <View style={styles.noConvHint}>
                 <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                 <Text style={[styles.noConvText, { color: colors.textSecondary }]}>
-                  Dis bonjour à tes matchs !
+                  Ne restez pas seul, rejoignez un événements
                 </Text>
               </View>
             ) : null
@@ -506,10 +519,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   convName: { fontSize: 16, fontWeight: '700', flex: 1 },
+  convTopRight: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
   convTime: { fontSize: 12, fontWeight: '500' },
   convBottom: { flexDirection: 'row', alignItems: 'center' },
   unreadPip: { width: 8, height: 8, borderRadius: 4, marginRight: 5 },
   convPreview: { fontSize: 14, lineHeight: 20, flex: 1 },
+
+  // ── Streak ──
+  streakAvatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    left: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFD580',
+  },
+  streakAvatarText: { fontSize: 11, lineHeight: 14 },
+  streakPill: {
+    backgroundColor: '#FFF3CD',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: '#FFD580',
+  },
+  streakPillText: { fontSize: 11, fontWeight: '800', color: '#D97706' },
 
   // ── Empty states ──
   emptyWrap: {
