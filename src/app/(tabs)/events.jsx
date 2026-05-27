@@ -76,6 +76,7 @@ export default function EventsScreen() {
   const [userLocation, setUserLocation] = useState(null);
   const [locLoading, setLocLoading] = useState(false);
   const [joiningId, setJoiningId] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
 
   // Sort by distance when nearMe is on
   const events = useMemo(() => {
@@ -120,10 +121,20 @@ export default function EventsScreen() {
     }
   }, []);
 
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const res = await eventsApi.getSuggested();
+      setSuggestions(res.data?.suggestions ?? []);
+    } catch {
+      // Non-critical, silently ignore
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchEvents(activeFilter, activeCategory);
-    }, [fetchEvents, activeFilter, activeCategory])
+      fetchSuggestions();
+    }, [fetchEvents, fetchSuggestions, activeFilter, activeCategory])
   );
 
   const handleFilterChange = (key) => {
@@ -207,6 +218,41 @@ export default function EventsScreen() {
           {isFull && <Text style={styles.ceSoirFull}>Complet</Text>}
         </View>
       </TouchableOpacity>
+    );
+  };
+
+  const SuggestionsSection = () => {
+    if (suggestions.length === 0) return null;
+    return (
+      <View style={styles.suggestSection}>
+        <View style={styles.suggestHeader}>
+          <Text style={[styles.suggestTitle, { color: colors.text }]}>Suggestions pour toi</Text>
+          <Text style={[styles.suggestSub, { color: colors.textSecondary }]}>Idées de sorties ✨</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestScroll}>
+          {suggestions.map((s, i) => {
+            const meta = CATEGORY_META[s.category] || CATEGORY_META.autre;
+            return (
+              <TouchableOpacity
+                key={i}
+                style={[styles.suggestCard, { backgroundColor: colors.backgroundSelected }]}
+                onPress={() => router.push({ pathname: '/(tabs)/event/create', params: { category: s.category, title: s.title } })}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.suggestIconWrap, { backgroundColor: meta.color + '20' }]}>
+                  <Ionicons name={meta.icon} size={22} color={meta.color} />
+                </View>
+                <Text style={[styles.suggestCardTitle, { color: colors.text }]} numberOfLines={2}>{s.title}</Text>
+                <Text style={[styles.suggestCardReason, { color: colors.textSecondary }]} numberOfLines={1}>{s.reason}</Text>
+                <View style={[styles.suggestCreateBtn, { backgroundColor: meta.color + '18' }]}>
+                  <Text style={[styles.suggestCreateText, { color: meta.color }]}>Créer</Text>
+                  <Ionicons name="add" size={13} color={meta.color} />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
     );
   };
 
@@ -461,7 +507,7 @@ export default function EventsScreen() {
         onRefresh={() => { setRefreshing(true); fetchEvents(activeFilter, activeCategory); }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<CeSoirSection />}
+        ListHeaderComponent={<><SuggestionsSection /><CeSoirSection /></>}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
@@ -641,6 +687,42 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   emptyCreateBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  // ── Suggestions ──
+  suggestSection: { marginBottom: 4 },
+  suggestHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  suggestTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  suggestSub: { fontSize: 12, fontWeight: '500' },
+  suggestScroll: { paddingHorizontal: Spacing.four, gap: 10 },
+  suggestCard: {
+    width: 130,
+    borderRadius: 18,
+    padding: 12,
+    gap: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  suggestIconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  suggestCardTitle: { fontSize: 13, fontWeight: '700', lineHeight: 17 },
+  suggestCardReason: { fontSize: 11, lineHeight: 15 },
+  suggestCreateBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 3, paddingVertical: 5, borderRadius: 8, marginTop: 2,
+  },
+  suggestCreateText: { fontSize: 12, fontWeight: '700' },
 
   // ── Ce soir ──
   ceSoirSection: {

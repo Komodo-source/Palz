@@ -78,7 +78,6 @@ function VoiceFunFactPlayer({ uri, colors }) {
   );
 }
 
-// Derive just the city from a location string like "Paris, France" → "Paris"
 function cityOnly(loc) {
   if (!loc) return null;
   return loc.split(',')[0].trim();
@@ -182,12 +181,12 @@ export default function UserDetailScreen() {
     : 1;
 
 
-  const lifestyleBadges = [
-    ...(user.is_premium ? [{ icon: 'star', label: 'Premium', bg: '#FFF9E6', color: '#D97706' }] : []),
-    ...(user.astrology_title ? [{ icon: ZODIAC_ICONS[user.astrology_title] || 'star-outline', label: user.astrology_title, bg: '#FFF0F3', color: '#CC3D5E' }] : []),
-    ...(user.situation ? [{ icon: 'heart-outline', label: user.situation, bg: '#E8D5F5', color: '#6D28D9' }] : []),
-    ...(user.work ? [{ icon: 'briefcase-outline', label: user.work, bg: '#E0F2FE', color: '#0369A1' }] : []),
-  ];
+const lifestyleBadges = [
+  ...(user.is_premium ? [{ icon: 'star', label: 'Premium', bg: '#FFF9E6', color: '#D97706' }] : []),
+  ...(typeof user.astrology_title === 'string' ? [{ icon: ZODIAC_ICONS[user.astrology_title] || 'star-outline', label: user.astrology_title, bg: '#FFF0F3', color: '#CC3D5E' }] : []),
+  ...(typeof user.situation === 'string' ? [{ icon: 'heart-outline', label: user.situation, bg: '#E8D5F5', color: '#6D28D9' }] : []),
+  ...(typeof user.work === 'string' ? [{ icon: 'briefcase-outline', label: user.work, bg: '#E0F2FE', color: '#0369A1' }] : []),
+];
 
   const reliabilityStars = Math.min(3, Math.max(1, user.reliability_score || 1));
   const rawLabels = user.labels && typeof user.labels === 'string' ? JSON.parse(user.labels) : (user.labels || {});
@@ -209,7 +208,7 @@ export default function UserDetailScreen() {
       {/* Sticky name bar (appears after gallery scrolls away) */}
       <Animated.View style={[styles.stickyBar, { backgroundColor: colors.background, opacity: headerOpacity }]}>
         <Text style={[styles.stickyName, { color: colors.text }]} numberOfLines={1}>
-          {user.full_name || user.user_name}{age ? `, ${age}` : ''}
+          {String(user.full_name || user.user_name || 'Utilisateur')}{age ? `, ${age}` : ''}
         </Text>
       </Animated.View>
 
@@ -331,7 +330,7 @@ export default function UserDetailScreen() {
         </View>
 
         {/* ── À propos ── */}
-        {user.bio ? (
+        {user.bio && typeof user.bio === 'string' ? (
           <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>À propos</Text>
             <Text style={[styles.bioText, { color: colors.textSecondary }]}>{user.bio}</Text>
@@ -339,15 +338,15 @@ export default function UserDetailScreen() {
         ) : null}
 
         {/* ── Prompt Q&A ── */}
-        {user.prompt_question && user.prompt_answer ? (
-          <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
-            <View style={styles.promptQuestion}>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color={PALETTE.rose} />
-              <Text style={[styles.promptQuestionText, { color: PALETTE.rose }]}>{user.prompt_question}</Text>
-            </View>
-            <Text style={[styles.promptAnswer, { color: colors.text }]}>{user.prompt_answer}</Text>
+      {typeof user.prompt_question === 'string' && typeof user.prompt_answer === 'string' ? (
+        <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+          <View style={styles.promptQuestion}>
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color={PALETTE.rose} />
+            <Text style={[styles.promptQuestionText, { color: PALETTE.rose }]}>{user.prompt_question}</Text>
           </View>
-        ) : null}
+          <Text style={[styles.promptAnswer, { color: colors.text }]}>{user.prompt_answer}</Text>
+        </View>
+      ) : null}
 
         {/* ── Labels: Vibe / Dispo / IRL ── */}
         {(vibeLabels.length > 0 || dispoLabels.length > 0 || irlLabels.length > 0) && (

@@ -109,7 +109,6 @@ export const uploadApi = {
    */
   uploadImage: async ({ uri, fileName, mimeType, token: providedToken }) => {
     const token = providedToken || await storage.getItem('auth_token');
-    console.log('[uploadImage] Token:', token ? `${token.substring(0, 20)}...` : 'NULL/UNDEFINED', '| from:', providedToken ? 'param' : 'storage');
     const formData = new FormData();
     formData.append('file', {
       uri,
@@ -117,23 +116,30 @@ export const uploadApi = {
       type: mimeType || 'image/jpeg',
     });
 
-    const res = await fetch(`${API_BASE}/upload/image`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'x-api-key': API_SECRET_KEY,
-      },
-      body: formData,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch(`${API_BASE}/upload/image`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'x-api-key': API_SECRET_KEY,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
 
-    console.log('[uploadImage] Response status:', res.status);
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({ error: 'Upload failed' }));
-      console.log('[uploadImage] Error body:', JSON.stringify(errBody));
-      throw new Error(errBody.error || 'Upload failed');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(errBody.error || 'Upload failed');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Délai dépassé — réessaie.');
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return res.json();
   },
 
   /**
@@ -150,21 +156,30 @@ export const uploadApi = {
       type: mimeType || 'audio/m4a',
     });
 
-    const res = await fetch(`${API_BASE}/upload/audio`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'x-api-key': API_SECRET_KEY,
-      },
-      body: formData,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch(`${API_BASE}/upload/audio`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'x-api-key': API_SECRET_KEY,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || 'Upload failed');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(err.error || 'Upload failed');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Délai dépassé — réessaie.');
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return res.json();
   },
 };
 
@@ -235,9 +250,11 @@ export const eventsApi = {
   getEvent: (id) => api.get(`/events/${id}`),
   joinEvent: (id) => api.post(`/events/${id}/join`),
   leaveEvent: (id) => api.post(`/events/${id}/leave`),
+  rsvpEvent: (id, status) => api.patch(`/events/${id}/rsvp`, { status }),
   getMessages: (id) => api.get(`/events/${id}/messages`),
   sendMessage: (id, data) =>
     api.post(`/events/${id}/messages`, typeof data === 'string' ? { content: data } : data),
+  getSuggested: () => api.get('/events/suggested'),
 };
 
 // ── Constant Data (zodiac, sports, hobbies) ──

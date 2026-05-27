@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -181,6 +181,9 @@ export default function EventDetailScreen() {
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [myRsvp, setMyRsvp] = useState('coming');
+  const [rsvpLoading, setRsvpLoading] = useState(false);
+  const [now, setNow] = useState(Date.now());
 
   const flatListRef = useRef(null);
   const recordTimerRef = useRef(null);
@@ -188,11 +191,18 @@ export default function EventDetailScreen() {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
 
+  // Tick every 30s to refresh countdown display
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   const loadEvent = useCallback(async () => {
     try {
       const res = await eventsApi.getEvent(id);
       setEvent(res.data.event);
       setMembers(res.data.members ?? []);
+      if (res.data.event?.my_rsvp) setMyRsvp(res.data.event.my_rsvp);
     } catch (err) {
       Alert.alert('Erreur', "Impossible de charger l'événement.");
       router.back();
@@ -260,6 +270,21 @@ export default function EventDetailScreen() {
     );
   };
 
+  const handleRsvp = async (status) => {
+    if (rsvpLoading || myRsvp === status) return;
+    setRsvpLoading(true);
+    const prev = myRsvp;
+    setMyRsvp(status);
+    try {
+      await eventsApi.rsvpEvent(id, status);
+    } catch {
+      setMyRsvp(prev);
+      Alert.alert('Erreur', 'Impossible de mettre à jour ta disponibilité.');
+    } finally {
+      setRsvpLoading(false);
+    }
+  };
+
   const handleSend = async () => {
     const content = inputText.trim();
     if (!content || sending) return;
@@ -289,11 +314,16 @@ export default function EventDetailScreen() {
       Alert.alert('Permission requise', "Autorise l'accès au micro pour enregistrer des messages vocaux.");
       return;
     }
-    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    setIsRecording(true);
-    recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
+    try {
+      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecording(true);
+      recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
+    } catch (err) {
+      console.error('Start recording error:', err);
+      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+    }
   };
 
   const stopAndSendRecording = async () => {
@@ -422,9 +452,31 @@ export default function EventDetailScreen() {
     );
   };
 
-  const isExpired = event ? new Date(event.starts_at).getTime() + 72 * 60 * 60 * 1000 < Date.now() : false;
+  const startsAtMs = event ? new Date(event.starts_at).getTime() : null;
+  // Chat is active until J+1 (starts_at + 24h)
+  const isExpired = startsAtMs ? startsAtMs + 24 * 60 * 60 * 1000 < now : false;
+  // Event has already started
+  const hasStarted = startsAtMs ? startsAtMs < now : false;
+  // Show post-event memory prompt: event started, chat still active (within 24h after)
+  const showMemoryPrompt = hasStarted && !isExpired && event?.is_joined;
+  // Event is still joinable (starts_at in the future, within the 72h window)
+  const isJoinable = startsAtMs ? startsAtMs > now : false;
   const isFull = event ? event.member_count >= event.max_members : false;
   const isCreator = event?.creator_id === user?.id;
+
+  const countdownLabel = useMemo(() => {
+    if (!startsAtMs) return '';
+    const diff = startsAtMs - now;
+    if (diff <= 0) return "C'est parti ! 🎉";
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      return `Dans ${days}j ${hours % 24}h`;
+    }
+    if (hours > 0) return `Dans ${hours}h ${mins}min`;
+    return `Dans ${mins} min`;
+  }, [startsAtMs, now]);
 
   const ListHeader = () => {
     if (!event) return null;
@@ -446,6 +498,14 @@ export default function EventDetailScreen() {
               par {event.creator_name || 'Anonyme'}
             </Text>
           </View>
+        </View>
+
+        {/* Countdown banner */}
+        <View style={[styles.countdownBanner, { backgroundColor: hasStarted ? '#10B981' + '18' : meta.color + '12' }]}>
+          <Ionicons name={hasStarted ? 'checkmark-circle-outline' : 'timer-outline'} size={18} color={hasStarted ? '#10B981' : meta.color} />
+          <Text style={[styles.countdownText, { color: hasStarted ? '#10B981' : meta.color }]}>
+            {countdownLabel}
+          </Text>
         </View>
 
         {/* Info rows */}
@@ -471,6 +531,22 @@ export default function EventDetailScreen() {
           </View>
         </View>
 
+        {/* Post-event memory prompt */}
+        {showMemoryPrompt && (
+          <TouchableOpacity
+            style={styles.memoryPrompt}
+            onPress={() => router.push('/(tabs)/wall')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.memoryPromptEmoji}>📸</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.memoryPromptTitle}>C'était comment ?</Text>
+              <Text style={styles.memoryPromptSub}>Poste un souvenir sur le Mur</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#fff" />
+          </TouchableOpacity>
+        )}
+
         {/* Description */}
         {!!event.description && (
           <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
@@ -494,7 +570,7 @@ export default function EventDetailScreen() {
         </View>
 
         {/* Join / Leave button */}
-        {!isExpired && (
+        {isJoinable && (
           event.is_joined ? (
             !isCreator && (
               <TouchableOpacity
@@ -523,6 +599,34 @@ export default function EventDetailScreen() {
               )}
             </TouchableOpacity>
           )
+        )}
+
+        {/* RSVP row — shown to members */}
+        {event.is_joined && (
+          <View style={styles.rsvpRow}>
+            {[
+              { key: 'coming',      label: 'Je viens',   icon: 'checkmark-circle', color: '#10B981' },
+              { key: 'maybe',       label: 'Peut-être',  icon: 'help-circle',      color: '#F59E0B' },
+              { key: 'unavailable', label: 'Pas dispo',  icon: 'close-circle',     color: '#EF4444' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[
+                  styles.rsvpBtn,
+                  myRsvp === opt.key && { backgroundColor: opt.color + '20', borderColor: opt.color },
+                  myRsvp !== opt.key && { borderColor: colors.backgroundSelected },
+                ]}
+                onPress={() => handleRsvp(opt.key)}
+                disabled={rsvpLoading}
+                activeOpacity={0.75}
+              >
+                <Ionicons name={opt.icon} size={16} color={myRsvp === opt.key ? opt.color : colors.textSecondary} />
+                <Text style={[styles.rsvpBtnText, { color: myRsvp === opt.key ? opt.color : colors.textSecondary }]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
 
         {/* Chat header */}
@@ -719,6 +823,50 @@ const styles = StyleSheet.create({
   heroCategoryLabel: { fontSize: 12, fontWeight: '700' },
   heroTitle: { fontSize: 22, fontWeight: '800', lineHeight: 26 },
   heroCreator: { fontSize: 13 },
+
+  countdownBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: Spacing.four,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  countdownText: { fontSize: 14, fontWeight: '700' },
+
+  memoryPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: Spacing.four,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#10B981',
+  },
+  memoryPromptEmoji: { fontSize: 22 },
+  memoryPromptTitle: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  memoryPromptSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
+
+  rsvpRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: Spacing.four,
+    marginBottom: 16,
+  },
+  rsvpBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  rsvpBtnText: { fontSize: 12, fontWeight: '700' },
 
   infoCard: {
     marginHorizontal: Spacing.four,

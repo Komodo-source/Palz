@@ -29,37 +29,51 @@ const SITUATION_LABELS = {
   complique: "C'est compliqué",
 };
 
+
 function InfoRow({ icon, label, value, color }) {
-  if (!value) return null;
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === 'object'
+  ) {
+    return null;
+  }
+
   return (
     <View style={styles.infoRow}>
       <View style={[styles.infoIconWrap, { backgroundColor: color + '20' }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>
+
       <View style={styles.infoRowText}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+        <Text style={styles.infoLabel}>{String(label)}</Text>
+        <Text style={styles.infoValue}>{String(value)}</Text>
       </View>
     </View>
   );
 }
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const { logout } =useAuth();
+
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
-  const [matchCount, setMatchCount] = useState(null);
+
   const [numberPhoto, SetnumberPhoto] = useState(null);
   const [numberRelation, setNumberRelation] = useState(null);
 
   useEffect(() => {
+    if (!user) return;
     parseNumberPhotos();
     parseNumberRelation();
-    swipesApi.getMatches().then((res) => {
-      setMatchCount(res.data?.matches?.length ?? 0);
+    // swipesApi.getMatches().then((res) => {
+    //   setMatchCount(res.data?.matches?.length ?? 0);
 
-    }).catch(() => {});
+    // }).catch(() => {});
   }, []);
+
+  if (!user) return <Text>Loading...</Text>;
 
   const handleLogout = () => {
     Alert.alert('Déconnexion', 'Tu veux vraiment nous quitter ?', [
@@ -69,6 +83,7 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await logout();
+
           router.replace('/(auth)/login');
         },
       },
@@ -100,13 +115,13 @@ export default function ProfileScreen() {
     SetnumberPhoto(res.data?.nb_photo.number_photo_posted);
   }
 
-  const formatDate = (dob) => {
-    if (!dob) return null;
+const formatDate = (dob) => {
+    if (!dob || typeof dob === 'object') return null;
     try {
       const d = new Date(dob);
       return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     } catch {
-      return dob;
+      return String(dob); // FIX: Ensure it always returns a string as a fallback
     }
   };
 
@@ -148,10 +163,12 @@ export default function ProfileScreen() {
           )}
         </View>
         <Text style={[styles.displayName, { color: colors.text }]}>
-          {user?.full_name || user?.user_name || 'Utilisatrice'}
+          {(typeof user?.full_name === 'string' && user.full_name) ||
+           (typeof user?.user_name === 'string' && user.user_name) ||
+           'Utilisatrice'}
         </Text>
         <Text style={[styles.username, { color: colors.textSecondary }]}>
-          @{user?.user_name || 'inconnue'}
+          @{(typeof user?.user_name === 'string' && user.user_name) || 'inconnue'}
         </Text>
       </View>
 
@@ -159,12 +176,14 @@ export default function ProfileScreen() {
       <View style={styles.statsRow}>
         <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
           <Text style={styles.statValue}>
-            {numberRelation !== null ? numberRelation : '—'}
+            {typeof numberRelation === 'string' || typeof numberRelation === 'number' ? numberRelation : '—'}
           </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Relations</Text>
         </View>
         <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
-          <Text style={styles.statValue}>{numberPhoto}</Text>
+          <Text style={styles.statValue}>
+            {typeof numberPhoto === 'string' || typeof numberPhoto === 'number' ? numberPhoto : '—'}
+          </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Photos</Text>
         </View>
         <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
@@ -198,7 +217,9 @@ export default function ProfileScreen() {
       )}
 
       {/* Bio */}
-      {user?.bio ? (
+
+      {/* FIX: Ensure user.bio is actually a string before rendering */}
+      {user?.bio && typeof user?.bio === 'string' ? (
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="chatbubble-ellipses-outline" size={18} color={PALETTE.rose} />

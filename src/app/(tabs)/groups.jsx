@@ -291,11 +291,16 @@ export default function GroupsScreen() {
       Alert.alert('Permission requise', "Autorise l'accès au micro pour enregistrer des messages vocaux.");
       return;
     }
-    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    setIsRecordingVoice(true);
-    recordTimerRef.current = setTimeout(() => stopGroupRecording(), 60000);
+    try {
+      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecordingVoice(true);
+      recordTimerRef.current = setTimeout(() => stopGroupRecording(), 60000);
+    } catch (err) {
+      console.error('Start recording error:', err);
+      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+    }
   };
 
   const stopGroupRecording = async () => {

@@ -459,6 +459,7 @@ export default function SwipeScreen() {
   }
 
   return (
+    {/*
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <View>
@@ -514,7 +515,7 @@ export default function SwipeScreen() {
             })
         )}
       </View>
-    </View>
+    </View>*/}
   );
 }
 

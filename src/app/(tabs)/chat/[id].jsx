@@ -388,11 +388,20 @@ export default function ChatScreen() {
       Alert.alert('Permission requise', "Autorise l'accès au micro pour enregistrer des messages vocaux.");
       return;
     }
-    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    setIsRecording(true);
-    recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
+    try {
+      //await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      })
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecording(true);
+      recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
+    } catch (err) {
+      console.error('Start recording error:', err);
+      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+    }
   };
 
   const stopAndSendRecording = async () => {
@@ -482,6 +491,7 @@ export default function ChatScreen() {
             <View style={[styles.iceBreakerShimmerDot, { backgroundColor: 'rgba(255,143,163,0.19)' }]} />
             <View style={[styles.iceBreakerShimmerDot2, { backgroundColor: 'rgba(232,213,245,0.15)' }]} />
           </View>
+          
 
           {/* Header */}
           <View style={styles.iceBreakerHeader}>
@@ -708,9 +718,16 @@ export default function ChatScreen() {
                 <View style={styles.onlineDot} />
               </View>
               <View>
-                <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
-                  {otherUserName}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
+                    {otherUserName}
+                  </Text>
+                  {(conversation?.streak ?? 0) >= 2 && (
+                    <View style={styles.streakBadge}>
+                      <Text style={styles.streakBadgeText}>🔥 {conversation.streak}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.headerSub, { color: PALETTE.rose }]}>En ligne</Text>
               </View>
             </TouchableOpacity>
@@ -871,6 +888,13 @@ const styles = StyleSheet.create({
   },
   headerName: { fontSize: 16, fontWeight: '700' },
   headerSub: { fontSize: 11, fontWeight: '600' },
+  streakBadge: {
+    backgroundColor: '#FFF3CD',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  streakBadgeText: { fontSize: 12, fontWeight: '700', color: '#92400E' },
 
   // Messages
   msgList: { paddingHorizontal: 8, paddingVertical: 12, flexGrow: 1 },

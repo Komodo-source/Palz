@@ -81,6 +81,7 @@ const SITUATION_OPTIONS = [
 export default function ProfileEditingScreen() {
   const { user, refreshUser } = useAuth();
 
+
   // ── Form state ──
   const [bio, setBio] = useState(user?.bio || '');
   const [work, setWork] = useState(user?.work || '');
@@ -185,6 +186,8 @@ export default function ProfileEditingScreen() {
         });
       }
     }
+
+    console.log("information_user", user);
   }, [user]);
 
   // Load zodiac signs once
@@ -374,7 +377,7 @@ export default function ProfileEditingScreen() {
         return;
       }
 
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
 
       // Options were given to useAudioRecorder — no need to pass them again
       await recorder.prepareToRecordAsync();
@@ -398,7 +401,7 @@ export default function ProfileEditingScreen() {
     }
 
     try {
-      await setAudioModeAsync({ allowsRecording: false });
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
     } catch {}
 
     // URI is a property on the recorder object, available after stop
@@ -513,6 +516,7 @@ export default function ProfileEditingScreen() {
 
       await usersApi.updateProfile(updateData);
       await refreshUser();
+
 
       // Success animation
       Animated.timing(saveOpacity, {
