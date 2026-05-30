@@ -10,7 +10,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
@@ -18,6 +18,26 @@ import MapPicker from '@/components/MapPicker';
 import { eventsApi } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
+
+const TONIGHT_SUGGESTIONS = [
+  { category: 'bar',        title: 'Bar entre copines',      emoji: '🍸' },
+  { category: 'restaurant', title: 'Resto du soir',          emoji: '🍝' },
+  { category: 'cinema',     title: 'Cinéma en groupe',       emoji: '🎬' },
+  { category: 'cafe',       title: 'Café & dessert',         emoji: '☕' },
+  { category: 'parc',       title: 'Balade au parc',         emoji: '🌳' },
+  { category: 'sport',      title: 'Sport en soirée',        emoji: '🏋️' },
+];
+
+// Returns a Date set to tonight at 20h
+function tonightAt(h = 20, min = 0) {
+  const d = new Date();
+  d.setHours(h, min, 0, 0);
+  // If it's already past the suggested time, bump to +1h from now
+  if (d <= new Date()) {
+    d.setTime(Date.now() + 90 * 60 * 1000);
+  }
+  return d;
+}
 
 const CATEGORIES = [
   { key: 'bar',        label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
@@ -45,10 +65,13 @@ function defaultStartTime() {
 export default function CreateEventScreen() {
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const params = useLocalSearchParams();
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(params.title || '');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('bar');
+  const [category, setCategory] = useState(
+    CATEGORIES.find((c) => c.key === params.category) ? params.category : 'bar'
+  );
   const [locationName, setLocationName] = useState('');
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
@@ -56,7 +79,9 @@ export default function CreateEventScreen() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [maxMembers, setMaxMembers] = useState(10);
-  const [startsAt, setStartsAt] = useState(defaultStartTime());
+  const [startsAt, setStartsAt] = useState(
+    params.tonight === 'true' ? tonightAt() : defaultStartTime()
+  );
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -180,6 +205,47 @@ export default function CreateEventScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ── Ce soir — quick create ── */}
+        <View style={[styles.tonightBanner, { backgroundColor: '#1A1035' }]}>
+          <View style={styles.tonightBannerTop}>
+            <Text style={styles.tonightEmoji}>🌙</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tonightBannerTitle}>Ce soir</Text>
+              <Text style={styles.tonightBannerSub}>Crée une sortie pour ce soir en un tap</Text>
+            </View>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tonightSuggestScroll}
+          >
+            {TONIGHT_SUGGESTIONS.map((s, i) => {
+              const cat = CATEGORIES.find((c) => c.key === s.category);
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.tonightSuggestCard, { borderColor: (cat?.color || PALETTE.rose) + '40' }]}
+                  onPress={() => {
+                    setTitle(s.title);
+                    setCategory(s.category);
+                    setStartsAt(tonightAt());
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.tonightSuggestIcon, { backgroundColor: (cat?.color || PALETTE.rose) + '20' }]}>
+                    <Ionicons name={cat?.icon || 'star-outline'} size={22} color={cat?.color || PALETTE.rose} />
+                  </View>
+                  <Text style={styles.tonightSuggestTitle}>{s.emoji} {s.title}</Text>
+                  <Text style={[styles.tonightSuggestCat, { color: cat?.color || PALETTE.rose }]}>{cat?.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Divider */}
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
         {/* Section: Category */}
         <Text style={[styles.sectionLabel, { color: colors.text }]}>Catégorie</Text>
         <View style={styles.categoryGrid}>
@@ -414,8 +480,11 @@ export default function CreateEventScreen() {
           numberOfLines={4}
           textAlignVertical="top"
         />
-        <View>
-          <Text>En créant cet évenement, je confirme être présent à l'évenement (attention l'absence à un évenement peut mener à des sanctions)</Text>
+        <View style={[styles.confirmationBox, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
+          <Ionicons name="information-circle-outline" size={18} color={PALETTE.rose} />
+          <Text style={[styles.confirmationText, { color: colors.textSecondary }]}>
+            En créant cet événement, tu confirmes être présente. Les absences non justifiées peuvent mener à des restrictions de compte.
+          </Text>
         </View>
 
         {/* Submit */}
@@ -574,4 +643,83 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   submitBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+
+  // ── Confirmation notice ──
+  confirmationBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  confirmationText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  // ── Ce soir banner ──
+  tonightBanner: {
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    shadowColor: '#6D28D9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  tonightBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  tonightEmoji: { fontSize: 28 },
+  tonightBannerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.3,
+  },
+  tonightBannerSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  tonightSuggestScroll: {
+    gap: 10,
+  },
+  tonightSuggestCard: {
+    width: 130,
+    borderRadius: 16,
+    padding: 12,
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+  },
+  tonightSuggestIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tonightSuggestTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+    lineHeight: 17,
+  },
+  tonightSuggestCat: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 4,
+  },
 });

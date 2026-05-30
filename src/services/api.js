@@ -8,6 +8,7 @@ const LOCAL_HOST = Platform.select({
   default: 'localhost',
 });
 
+
 const USE_LOCAL = process.env.EXPO_PUBLIC_USE_LOCAL === 'true';
 const PROD_HOST = 'https://palz-backend.onrender.com';
 
@@ -79,6 +80,7 @@ export const usersApi = {
   getNumberRelation: () => api.get('/users/nb_relation'),
   getProfile: (id) => api.get(`/users/${id}`),
   updateProfile: (data) => api.put('/users/profile', data),
+  reportUser: (data) => api.post(`/users/report_user`, data),
 };
 
 // ── Upload ──
@@ -172,6 +174,41 @@ export const uploadApi = {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Upload failed' }));
         throw new Error(err.error || 'Upload failed');
+      }
+      return res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Délai dépassé — réessaie.');
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  },
+
+  uploadVideo: async ({ uri, fileName, mimeType, token: providedToken }) => {
+    const token = providedToken || await storage.getItem('auth_token');
+    const formData = new FormData();
+    formData.append('file', {
+      uri,
+      name: fileName || 'verification.mp4',
+      type: mimeType || 'video/mp4',
+    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+      const res = await fetch(`${API_BASE}/upload/video-verification`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'x-api-key': API_SECRET_KEY,
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(errBody.error || 'Upload failed');
       }
       return res.json();
     } catch (err) {

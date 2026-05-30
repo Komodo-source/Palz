@@ -22,26 +22,8 @@ import { usersApi, constantDataApi, uploadApi } from '@/services/api';
 import { COMPATIBILITY_QUESTIONS, getDefaultAnswers } from '@/utils/compatibility';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import ConfettiCannon from '@/components/ConfettiCannon';
 
-// Native-only modules — only load on Android/iOS, not web
-let Camera = null;
-let RNFS = null;
-let PermissionsModule = null;
-let Video = null;
-if (Platform.OS !== 'web') {
-  try {
-    Camera = require('react-native-vision-camera').Camera;
-  } catch (_) {}
-  try {
-    RNFS = require('react-native-fs').default || require('react-native-fs');
-  } catch (_) {}
-  try {
-    PermissionsModule = require('react-native-permissions');
-  } catch (_) {}
-  try {
-    Video = require('react-native-video').default || require('react-native-video');
-  } catch (_) {}
-}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_SIZE = (SCREEN_WIDTH - 64) / 3;
@@ -73,7 +55,7 @@ const SITUATION_OPTIONS = [
   { label: 'C\'est compliqué', value: 'complique', icon: 'pulse' },
 ];
 
-const TOTAL_STEPS = 11; // zodiac(0) + sports(1) + hobbies(2) + photos(3) + location(4) + situation(5) + relation(6) + compat(7-9)
+const TOTAL_STEPS = 11; // zodiac(0) + sports(1) + hobbies(2) + photos(3) + location(4) + situation(5) + relation(6) + compat(7-9) + video(10)
 
 
 
@@ -400,9 +382,8 @@ export default function OnboardingScreen() {
   const [typeSearchOptions, setTypeSearchOptions] = useState([]);
   const [selectedTypeSearch, setSelectedTypeSearch] = useState(null);
 
-  const [isRecording, setIsRecording] = useState(false);
-const [videoPath, setVideoPath] = useState('');
-const cameraRef = useRef();
+  const [videoVerified, setVideoVerified] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
 
 
   // Compatibility answers
@@ -415,86 +396,90 @@ const cameraRef = useRef();
 
 
 
-  const startRecording = async () => {
-      if (!Camera || !RNFS) {
-        Alert.alert('Non disponible', "L'enregistrement vidéo n'est pas disponible sur cette plateforme.");
-        return;
+  const recordVideo = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission requise', "Accorde l'accès à la caméra pour enregistrer la vidéo.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: 15,
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets?.length > 0) {
+      const asset = result.assets[0];
+      setIsUploadingVideo(true);
+      try {
+        await uploadApi.uploadVideo({
+          uri: asset.uri,
+          fileName: `verification_${Date.now()}.mp4`,
+          mimeType: 'video/mp4',
+        });
+        setVideoVerified(true);
+      } catch (err) {
+        console.error('Video upload error:', err);
+        Alert.alert('Oups', "Impossible d'envoyer la vidéo. Réessaie !");
+      } finally {
+        setIsUploadingVideo(false);
       }
-      const hasPermission = await requestCameraPermission();
-      if (!hasPermission) return;
-
-      setIsRecording(true);
-
-      const videoPath = `${RNFS.CachesDirectoryPath}/video.mp4`;
-      setVideoPath(videoPath);
-
-      cameraRef.current.startRecording({
-        quality: '720p',
-        videoBitrate: 2000000,
-        maxDuration: 10,
-        maxFileSize: 100 * 1024 * 1024,
-        outputPath: videoPath,
-      });
-    };
-
-  const stopRecording = async () => {
-    setIsRecording(false);
-    await cameraRef.current.stopRecording();
-  };
-
-   const requestCameraPermission = async () => {
-    if (!PermissionsModule) return false;
-    const { PERMISSIONS, requestMultiple, RESULTS } = PermissionsModule;
-    const statuses = await requestMultiple([
-      PERMISSIONS.ANDROID.CAMERA,
-      PERMISSIONS.ANDROID.RECORD_AUDIO,
-      PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE,
-    ]);
-    return (
-      statuses[PERMISSIONS.ANDROID.CAMERA] === RESULTS.GRANTED &&
-      statuses[PERMISSIONS.ANDROID.RECORD_AUDIO] === RESULTS.GRANTED &&
-      statuses[PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE] === RESULTS.GRANTED
-    );
+    }
   };
 
 
-  function CheckIfWomen(){
-
+  function CheckIfWomen() {
     return (
       <View style={styles.stepContainer}>
         <View style={styles.stepHeader}>
           <View style={[styles.iconCircle, { backgroundColor: PALETTE.rosePale }]}>
-            <Ionicons name="star" size={32} color={PALETTE.rose} />
+            <Ionicons name="videocam" size={32} color={PALETTE.rose} />
           </View>
           <Text style={styles.stepTitle}>Confirmation d'identité</Text>
-
+          <Text style={styles.stepSubtitle}>
+            Une courte vidéo pour vérifier ton identité
+          </Text>
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
-          <Text style={styles.subtitleConfirmation}>Afin de confirmer votre identité veuillez, prendre une courte vidéo de vous suivant les instructions suivantes: </Text>
-          <Text style={styles.instruction}>• Bougez votre tête de gauche à droite, pour chaque face restez au moins 2 secondes</Text>
-          <Text style={styles.instruction}>• mettre 3 doigts devant votre visage</Text>
+          <Text style={styles.subtitleConfirmation}>
+            Enregistre une courte vidéo en suivant ces instructions :
+          </Text>
+          <Text style={styles.instruction}>• Bouge la tête de gauche à droite, 2 secondes de chaque côté</Text>
+          <Text style={styles.instruction}>• Montre 3 doigts devant ton visage</Text>
+          <Text style={styles.instruction}>• Assure-toi d'être dans un endroit bien éclairé</Text>
 
-          <Camera style={styles.camera} ref={cameraRef} />
-            {isRecording ? (
-              <TouchableOpacity style={styles.recordButton} onPress={stopRecording}>
-                <Text style={styles.recordButtonText}>Arêtez</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
-                <Text style={styles.recordButtonText}>Commencer l'enregistrement</Text>
-              </TouchableOpacity>
-            )}
-
-            {videoPath !== '' && (
-              <View style={styles.videoPlayer}>
-                <Video source={{ uri: videoPath }} style={styles.videoPlayer} controls />
+          <View style={styles.videoActionWrap}>
+            {isUploadingVideo ? (
+              <View style={styles.videoStatusWrap}>
+                <ActivityIndicator color={PALETTE.rose} size="large" />
+                <Text style={styles.videoStatusText}>Envoi en cours...</Text>
               </View>
+            ) : videoVerified ? (
+              <View style={styles.videoStatusWrap}>
+                <Ionicons name="checkmark-circle" size={56} color={PALETTE.success} />
+                <Text style={[styles.videoStatusText, { color: PALETTE.success }]}>
+                  Vidéo envoyée avec succès !
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.recordButton} onPress={recordVideo} activeOpacity={0.8}>
+                <Ionicons name="videocam" size={22} color={PALETTE.white} />
+                <Text style={styles.recordButtonText}>Enregistrer ma vidéo</Text>
+              </TouchableOpacity>
             )}
+          </View>
 
-          <Text style={styles.instruction}>Après la confirmation de notre IA, cette vidéo sera supprimé de nos serveurs</Text>
+          <Text style={[styles.instruction, { marginTop: 16, color: PALETTE.textLight, fontStyle: 'italic' }]}>
+            Cette vidéo sera supprimée après vérification par notre équipe.
+          </Text>
+
+          {!videoVerified && !isUploadingVideo && (
+            <TouchableOpacity onPress={() => setVideoVerified(true)} style={styles.skipVideoBtn}>
+              <Text style={styles.skipLink}>Passer cette étape</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
-    )
+    );
   }
 
 
@@ -794,16 +779,10 @@ const cameraRef = useRef();
         ),
       };
     }
-    if (step === 7) {
+    if (step === 10) {
       return {
-        canProceed: selectedTypeSearch !== null,
-        component: (
-          <RelationshipStep
-            options={typeSearchOptions}
-            selected={selectedTypeSearch}
-            onSelect={setSelectedTypeSearch}
-          />
-        ),
+        canProceed: videoVerified,
+        component: <CheckIfWomen />,
       };
     }
     if (compatIdx >= 0 && compatIdx < COMPATIBILITY_QUESTIONS.length) {
@@ -926,6 +905,7 @@ const cameraRef = useRef();
             </Text>
           </View>
         </RNAnimated.View>
+        <ConfettiCannon firing={showResult} />
       </View>
     );
   }
@@ -947,7 +927,7 @@ const cameraRef = useRef();
   // Label for progress
   const stepLabels = [
     'Astro', 'Sports', 'Loisirs', 'Photos', 'Localisation', 'Situation', 'Relation',
-    'Énergie', 'Planning', 'Conversation',
+    'Énergie', 'Planning', 'Conversation', 'Vérification',
   ];
 
   return (
@@ -1916,6 +1896,67 @@ const styles = StyleSheet.create({
     color: PALETTE.textLight,
     fontStyle: 'italic',
     marginTop: 4,
+  },
+
+  // Video verification
+  subtitleConfirmation: {
+    fontSize: 15,
+    color: PALETTE.textMid,
+    lineHeight: 22,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  instruction: {
+    fontSize: 14,
+    color: PALETTE.textDark,
+    lineHeight: 22,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  videoActionWrap: {
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  videoStatusWrap: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+  },
+  videoStatusText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: PALETTE.textDark,
+    textAlign: 'center',
+  },
+  recordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: PALETTE.rose,
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  recordButtonText: {
+    color: PALETTE.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  skipVideoBtn: {
+    alignItems: 'center',
+    marginTop: 20,
+    paddingVertical: 8,
+  },
+  skipLink: {
+    color: PALETTE.textLight,
+    fontSize: 15,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 
   // Relation

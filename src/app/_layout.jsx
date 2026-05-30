@@ -4,6 +4,7 @@ import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from '@/contexts/auth';
+import { SnackbarProvider } from '@/contexts/snackbar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -32,7 +33,9 @@ export default function RootLayout() {
         merchantIdentifier="merchant.com.palz"
       >
         <AuthProvider>
-          <RootNavigator />
+          <SnackbarProvider>
+            <RootNavigator />
+          </SnackbarProvider>
         </AuthProvider>
       </StripeProvider>
     </GestureHandlerRootView>

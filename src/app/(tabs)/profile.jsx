@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,38 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/contexts/auth';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getStorageUrl, swipesApi } from '@/services/api';
+import { getStorageUrl, swipesApi, usersApi } from '@/services/api';
+import { useSnackbar } from '@/contexts/snackbar';
 import { parseDbJson } from '@/utils/parsers';
-import { usersApi } from '@/services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_W = (SCREEN_WIDTH - 48 - 8) / 3;
+
+function useCountUp(target, duration = 900) {
+  const [display, setDisplay] = useState(0);
+  const frameRef = useRef(null);
+  useEffect(() => {
+    if (target === null || target === undefined) return;
+    const n = Number(target);
+    if (isNaN(n) || n <= 0) { setDisplay(target); return; }
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      setDisplay(Math.floor(eased * n));
+      if (progress < 1) frameRef.current = setTimeout(tick, 16);
+      else setDisplay(n);
+    };
+    frameRef.current = setTimeout(tick, 16);
+    return () => clearTimeout(frameRef.current);
+  }, [target]);
+  return display;
+}
 
 const SITUATION_LABELS = {
   couple: 'En couple',
@@ -59,9 +82,12 @@ export default function ProfileScreen() {
 
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const snackbar = useSnackbar();
 
   const [numberPhoto, SetnumberPhoto] = useState(null);
   const [numberRelation, setNumberRelation] = useState(null);
+  const animRelation = useCountUp(numberRelation);
+  const animPhoto = useCountUp(numberPhoto);
 
   useEffect(() => {
     if (!user) return;
@@ -73,7 +99,7 @@ export default function ProfileScreen() {
     // }).catch(() => {});
   }, []);
 
-  if (!user) return <Text>Loading...</Text>;
+  if (!user) return <Text style={{ textAlign: 'center', marginTop: 60 }}>Chargement...</Text>;
 
   const handleLogout = () => {
     Alert.alert('Déconnexion', 'Tu veux vraiment nous quitter ?', [
@@ -174,31 +200,31 @@ const formatDate = (dob) => {
 
       {/* Stats row */}
       <View style={styles.statsRow}>
-        <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
+        <Animated.View entering={FadeInDown.delay(80).duration(400).springify().damping(14)} style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
           <Text style={styles.statValue}>
-            {typeof numberRelation === 'string' || typeof numberRelation === 'number' ? numberRelation : '—'}
+            {numberRelation !== null ? animRelation : '—'}
           </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Relations</Text>
-        </View>
-        <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(160).duration(400).springify().damping(14)} style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
           <Text style={styles.statValue}>
-            {typeof numberPhoto === 'string' || typeof numberPhoto === 'number' ? numberPhoto : '—'}
+            {numberPhoto !== null ? animPhoto : '—'}
           </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Photos</Text>
-        </View>
-        <View style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
+        </Animated.View>
+        <Animated.View entering={FadeInDown.delay(240).duration(400).springify().damping(14)} style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
           <Text style={styles.statValue}>
             {user?.created_at
               ? new Date(user.created_at).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
               : '—'}
           </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Membre</Text>
-        </View>
+        </Animated.View>
       </View>
 
       {/* Photos gallery */}
       {photos.length > 0 && (
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+        <Animated.View entering={FadeInDown.delay(300).duration(400).springify().damping(14)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="images-outline" size={18} color={PALETTE.rose} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>Mes photos</Text>
@@ -213,24 +239,22 @@ const formatDate = (dob) => {
               />
             ))}
           </View>
-        </View>
+        </Animated.View>
       )}
 
       {/* Bio */}
-
-      {/* FIX: Ensure user.bio is actually a string before rendering */}
       {user?.bio && typeof user?.bio === 'string' ? (
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+        <Animated.View entering={FadeInDown.delay(360).duration(400).springify().damping(14)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="chatbubble-ellipses-outline" size={18} color={PALETTE.rose} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>À propos</Text>
           </View>
           <Text style={[styles.bioText, { color: colors.text }]}>{user.bio}</Text>
-        </View>
+        </Animated.View>
       ) : null}
 
       {/* Info list */}
-      <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+      <Animated.View entering={FadeInDown.delay(400).duration(400).springify().damping(14)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
         <View style={styles.cardHeader}>
           <Ionicons name="person-circle-outline" size={18} color={PALETTE.rose} />
           <Text style={[styles.cardTitle, { color: colors.text }]}>Informations</Text>
@@ -248,11 +272,11 @@ const formatDate = (dob) => {
           value={user?.astrology_sign_id ? 'Renseigné' : null}
           color="#B37FEB"
         />
-      </View>
+      </Animated.View>
 
       {/* Interests */}
       {interests.length > 0 && (
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+        <Animated.View entering={FadeInDown.delay(460).duration(400).springify().damping(14)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <View style={styles.cardHeader}>
             <Ionicons name="sparkles-outline" size={18} color={PALETTE.rose} />
             <Text style={[styles.cardTitle, { color: colors.text }]}>Centres d'intérêt</Text>
@@ -264,11 +288,11 @@ const formatDate = (dob) => {
               </View>
             ))}
           </View>
-        </View>
+        </Animated.View>
       )}
 
       {/* Membership */}
-      <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+      <Animated.View entering={FadeInDown.delay(520).duration(400).springify().damping(14)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
         <View style={styles.cardHeader}>
           <Ionicons name="ribbon-outline" size={18} color={PALETTE.rose} />
           <Text style={[styles.cardTitle, { color: colors.text }]}>Abonnement</Text>
@@ -299,39 +323,45 @@ const formatDate = (dob) => {
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </Animated.View>
 
       {/* Bouton modifier */}
-      <TouchableOpacity
-        style={styles.editButton}
-        onPress={() => router.push('/(tabs)/profil/editing_profil')}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="create-outline" size={20} color={PALETTE.white} />
-        <Text style={styles.editButtonText}>Modifier mon profil</Text>
-      </TouchableOpacity>
+      <View>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => router.push('/(tabs)/profil/editing_profil')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="create-outline" size={20} color={PALETTE.white} />
+          <Text style={styles.editButtonText}>Modifier mon profil</Text>
+        </TouchableOpacity>
+      </View>
 
 
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={() => router.push('/(tabs)/')}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
-        <Text style={styles.logoutText}>Paramètre</Text>
-      </TouchableOpacity>
+      <View>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={() => router.push('/(tabs)/')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
+          <Text style={styles.logoutText}>Paramètre</Text>
+        </TouchableOpacity>
+      </View>
 
 
 
       {/* Logout */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
-        <Text style={styles.logoutText}>Se déconnecter</Text>
-      </TouchableOpacity>
+      <View>
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
+          <Text style={styles.logoutText}>Se déconnecter</Text>
+        </TouchableOpacity>
+      </View>
 
 
 

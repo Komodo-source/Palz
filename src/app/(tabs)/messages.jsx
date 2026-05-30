@@ -12,10 +12,12 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { messagesApi, swipesApi, eventsApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
+import { useSnackbar } from '@/contexts/snackbar';
 
 const CATEGORY_ICONS = {
   bar: 'wine-outline',
@@ -37,6 +39,7 @@ const CATEGORY_COLORS = {
 export default function MessagesScreen() {
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const snackbar = useSnackbar();
 
   const [conversations, setConversations] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -93,7 +96,7 @@ export default function MessagesScreen() {
   };
 
   const getInitials = (name) => {
-    if (!name) return '?';
+    if (!name || typeof name !== 'string') return '?';
     const parts = name.split(' ');
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return name.slice(0, 2).toUpperCase();
@@ -107,18 +110,19 @@ export default function MessagesScreen() {
   };
 
   // ── Messages not match ──
-  const renderMatch = (match) => {
+  const renderMatch = (match, index) => {
     const img = getAvatar(match.profile_image);
-    const name = match.full_name || match.user_name || '?';
+    const name = (typeof match.full_name === 'string' && match.full_name) ||
+                 (typeof match.user_name === 'string' && match.user_name) || '?';
     const firstWord = name.split(' ')[0];
 
     return (
-      <TouchableOpacity
-        key={match.id}
-        style={styles.matchBubble}
-        onPress={() => router.push(`/(tabs)/chat/${match.conversation_id}`)}
-        activeOpacity={0.7}
-      >
+      <Animated.View key={match.id} entering={FadeInRight.delay(Math.min(index * 60, 360)).duration(350).springify().damping(15)}>
+        <TouchableOpacity
+          style={styles.matchBubble}
+          onPress={() => router.push(`/(tabs)/chat/${match.conversation_id}`)}
+          activeOpacity={0.7}
+        >
         <View style={styles.matchAvatarWrap}>
           {img ? (
             <Image source={{ uri: img }} style={styles.matchAvatar} />
@@ -133,29 +137,29 @@ export default function MessagesScreen() {
         </View>
         <Text style={[styles.matchName, { color: colors.textSecondary }]} numberOfLines={1}>
           {firstWord}
-        </Text>
-      </TouchableOpacity>
+        </Text>        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
   // ── Event bubble ──
-  const renderEventBubble = (event) => {
+  const renderEventBubble = (event, index) => {
     const color = CATEGORY_COLORS[event.category] || PALETTE.rose;
     const icon = CATEGORY_ICONS[event.category] || 'calendar-outline';
     const isFull = event.member_count >= event.max_members;
 
     return (
-      <TouchableOpacity
-        key={event.id}
-        style={[styles.eventBubble, { borderColor: color + '40' }]}
-        onPress={() => router.push(`/(tabs)/event/${event.id}`)}
-        activeOpacity={0.7}
-      >
+      <View key={event.id}>
+        <TouchableOpacity
+          style={[styles.eventBubble, { borderColor: color + '40' }]}
+          onPress={() => router.push(`/(tabs)/event/${event.id}`)}
+          activeOpacity={0.7}
+        >
         <View style={[styles.eventIconWrap, { backgroundColor: color + '20' }]}>
           <Ionicons name={icon} size={20} color={color} />
         </View>
         <Text style={[styles.eventBubbleTitle, { color: colors.text }]} numberOfLines={1}>
-          {event.title}
+          {typeof event.title === 'string' ? event.title : ''}
         </Text>
         <Text style={[styles.eventBubbleTime, { color: colors.textSecondary }]} numberOfLines={1}>
           {formatEventTime(event.starts_at)}
@@ -163,25 +167,26 @@ export default function MessagesScreen() {
         <View style={styles.eventMembersRow}>
           <Ionicons name="people-outline" size={11} color={isFull ? '#EF4444' : colors.textSecondary} />
           <Text style={[styles.eventMembersText, { color: isFull ? '#EF4444' : colors.textSecondary }]}>
-            {event.member_count}/{event.max_members}
+            {typeof event.member_count === 'number' ? event.member_count : '?'}/{typeof event.max_members === 'number' ? event.max_members : '?'}
           </Text>
-        </View>
-      </TouchableOpacity>
+        </View>        </TouchableOpacity>
+      </View>
     );
   };
 
   // ── Conversation row ──
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item, index }) => {
     const img = getAvatar(item.other_user_image);
     const isMe = item.last_message_sender_id && item.last_message_sender_id !== item.other_user_id;
     const streak = item.streak ?? 0;
 
     return (
-      <TouchableOpacity
-        style={[styles.convItem, { borderBottomColor: colors.backgroundSelected }]}
-        onPress={() => router.push(`/(tabs)/chat/${item.id}`)}
-        activeOpacity={0.7}
-      >
+      <Animated.View entering={FadeInDown.delay(Math.min(index * 55, 400)).duration(380).springify().damping(16)}>
+        <TouchableOpacity
+          style={[styles.convItem, { borderBottomColor: colors.backgroundSelected }]}
+          onPress={() => router.push(`/(tabs)/chat/${item.id}`)}
+          activeOpacity={0.7}
+        >
         {/* Avatar — tap to view profile */}
         <TouchableOpacity
           style={styles.avatarWrap}
@@ -207,12 +212,12 @@ export default function MessagesScreen() {
         <View style={styles.convBody}>
           <View style={styles.convTop}>
             <Text style={[styles.convName, { color: colors.text }]} numberOfLines={1}>
-              {item.other_user_name}
+              {typeof item.other_user_name === 'string' ? item.other_user_name : ''}
             </Text>
             <View style={styles.convTopRight}>
               {streak >= 2 && (
                 <View style={styles.streakPill}>
-                  <Text style={styles.streakPillText}>{streak}</Text>
+                  <Text style={styles.streakPillText}>🔥 {streak}</Text>
                 </View>
               )}
               <Text style={[styles.convTime, { color: colors.textSecondary }]}>
@@ -232,11 +237,14 @@ export default function MessagesScreen() {
               ]}
               numberOfLines={1}
             >
-              {isMe ? `Toi: ${item.last_message}` : (item.last_message || 'Aucun message')}
+              {isMe
+                ? `Toi: ${typeof item.last_message === 'string' ? item.last_message : ''}`
+                : ((typeof item.last_message === 'string' && item.last_message) || 'Aucun message')}
             </Text>
           </View>
         </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 

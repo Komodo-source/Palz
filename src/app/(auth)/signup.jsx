@@ -12,10 +12,6 @@ import {
   Alert,
   Image,
 } from 'react-native';
-let DateTimePicker = null;
-if (Platform.OS !== 'web') {
-  DateTimePicker = require('@react-native-community/datetimepicker').default;
-}
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -26,6 +22,10 @@ import { getColors, Spacing } from '@/constants/theme';
 import { isValidEmail } from '@/utils/validation';
 import { useGoogleAuth } from '@/hooks/use-google-auth';
 import { authApi, uploadApi, usersApi } from '@/services/api';
+let DateTimePicker = null;
+if (Platform.OS !== 'web') {
+  DateTimePicker = require('@react-native-community/datetimepicker').default;
+}
 
 const PALETTE = {
   rose: '#FF8FA3',

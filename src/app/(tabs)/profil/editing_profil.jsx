@@ -31,6 +31,7 @@ import * as Location from 'expo-location';
 import { useAuth } from '@/contexts/auth';
 import { usersApi, uploadApi, getStorageUrl, constantDataApi } from '@/services/api';
 import { parseDbJson } from '@/utils/parsers';
+import { useSnackbar } from '@/contexts/snackbar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_SIZE = (SCREEN_WIDTH - 48 - 16) / 3;
@@ -80,6 +81,7 @@ const SITUATION_OPTIONS = [
 
 export default function ProfileEditingScreen() {
   const { user, refreshUser } = useAuth();
+  const snackbar = useSnackbar();
 
 
   // ── Form state ──
@@ -110,11 +112,13 @@ export default function ProfileEditingScreen() {
   const [showPromptPicker, setShowPromptPicker] = useState(false);
 
   // ── Labels (Vibe / Dispo / IRL) ──
-  const [labels, setLabels] = useState(
-    user?.labels && typeof user.labels === 'object'
-      ? { vibe: user.labels.vibe || [], dispo: user.labels.dispo || [], irl: user.labels.irl || [] }
-      : { vibe: [], dispo: [], irl: [] }
-  );
+  const [labels, setLabels] = useState(() => {
+    const parsed = parseDbJson(user?.labels);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { vibe: parsed.vibe || [], dispo: parsed.dispo || [], irl: parsed.irl || [] };
+    }
+    return { vibe: [], dispo: [], irl: [] };
+  });
 
   // ── Audio / Fun Fact ──
   const [isRecording, setIsRecording] = useState(false);
@@ -175,8 +179,11 @@ export default function ProfileEditingScreen() {
 
       if (user.prompt_question) setPromptQuestion(user.prompt_question);
       if (user.prompt_answer) setPromptAnswer(user.prompt_answer);
-      if (user.labels && typeof user.labels === 'object') {
-        setLabels({ vibe: user.labels.vibe || [], dispo: user.labels.dispo || [], irl: user.labels.irl || [] });
+      if (user.labels) {
+        const parsed = parseDbJson(user.labels);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          setLabels({ vibe: parsed.vibe || [], dispo: parsed.dispo || [], irl: parsed.irl || [] });
+        }
       }
 
       if (user.latitude && user.longitude) {
@@ -517,6 +524,7 @@ export default function ProfileEditingScreen() {
       await usersApi.updateProfile(updateData);
       await refreshUser();
 
+      snackbar.success('Profil mis à jour ✓', 2000);
 
       // Success animation
       Animated.timing(saveOpacity, {

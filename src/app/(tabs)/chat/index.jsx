@@ -77,7 +77,7 @@ export default function ChatListScreen() {
       <View style={styles.conversationInfo}>
         <View style={styles.conversationHeader}>
           <Text style={[styles.conversationName, { color: colors.text }]} numberOfLines={1}>
-            {item.other_user?.full_name || item.other_user?.user_name || 'Inconnue'}
+            {typeof item.other_user?.full_name === 'string' ? item.other_user?.full_name : (typeof item.other_user?.user_name === 'string' ? item.other_user?.user_name : 'Inconnue')}
           </Text>
           <Text style={[styles.conversationTime, { color: colors.textSecondary }]}>
             {formatTime(item.last_message?.created_at)}

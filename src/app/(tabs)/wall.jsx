@@ -12,14 +12,19 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
+
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
-import { wallApi, uploadApi, messagesApi } from '@/services/api';
+import { wallApi, uploadApi, messagesApi, swipesApi, eventsApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
+import { useSnackbar } from '@/contexts/snackbar';
+
+import storage from '@/services/storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GAP = 10;
@@ -40,6 +45,54 @@ function formatTimeAgo(dateStr) {
   return '> 24h';
 }
 
+// ── Reaction button ──
+function ReactionButton({ item, onReact, colors }) {
+  const handlePress = () => {
+    onReact(item.id, item.has_reacted);
+  };
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.reactBtn}
+        onPress={handlePress}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      >
+        <Text style={[styles.reactFlower, { opacity: item.has_reacted ? 1 : 0.4 }]}>🌸</Text>
+        {item.reaction_count > 0 && (
+          <Text style={[styles.reactCount, { color: item.has_reacted ? PALETTE.rose : colors.textSecondary }]}>
+            {item.reaction_count}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const VIBE_TO_STYLE_W = {
+  'Homebody': 'soirée cocooning 🏠', 'Bookworm': 'lecture & café ☕',
+  'Sportive': 'aventures outdoor 🏃', 'Voyageuse': 'explorations urbaines 🗺️',
+  'Spontanée': 'sorties impromptues ✨', 'Foodie': 'foodie dates 🍝',
+  'Geek': 'gaming & séries 🎮', 'Créative': 'créa & culture 🎨',
+  'Ambitieuse': 'dépassement de soi 💪', 'Artiste': 'art & culture 🎭',
+};
+const DISPO_TO_STYLE_W = {
+  'Soirées': 'late-night talks 🌙', 'Brunchs': 'brunch & bonne humeur 🥞',
+  'Apéros': 'apéro entre copines 🥂', 'Cinéma': 'movie nights 🎬',
+  'Sport': 'sport & wellbeing 💪', 'Concerts': 'concerts & musique 🎵',
+  'Voyages': 'road trips & escapes ✈️', 'Randos': 'randos & nature 🌿',
+  'Yoga': 'zen & bien-être 🧘', 'Musées/Expos': 'culture & expos 🖼️',
+};
+function getTopVibeWall(user) {
+  if (!user) return 'moments de partage 💕';
+  const labels = user.labels && typeof user.labels === 'object' ? user.labels : {};
+  const vibes = Array.isArray(labels.vibe) ? labels.vibe : [];
+  const dispos = Array.isArray(labels.dispo) ? labels.dispo : [];
+  for (const v of vibes) if (VIBE_TO_STYLE_W[v]) return VIBE_TO_STYLE_W[v];
+  for (const d of dispos) if (DISPO_TO_STYLE_W[d]) return DISPO_TO_STYLE_W[d];
+  return 'moments de partage 💕';
+}
+
 function getThemeCountdown(endsAt) {
   if (!endsAt) return null;
   const diffMs = new Date(endsAt).getTime() - Date.now();
@@ -57,8 +110,11 @@ function getThemeCountdown(endsAt) {
 
 export default function WallScreen() {
   const { user: currentUser } = useAuth();
+  const [weekStats, setWeekStats] = useState(null);
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const snackbar = useSnackbar();
+
 
   const [theme, setTheme] = useState(null);
   const [posts, setPosts] = useState([]);
@@ -69,7 +125,9 @@ export default function WallScreen() {
   const [themeModal, setThemeModal] = useState(false);
   const [viewerPhoto, setViewerPhoto] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  const [recapModal, setRecapModal] = useState(false);
   const hasShownTheme = useRef(false);
+  const hasCheckedRecap = useRef(false);
   const countdownInterval = useRef(null);
 
   const fetchWall = useCallback(async () => {
@@ -108,6 +166,49 @@ export default function WallScreen() {
     }, [fetchWall])
   );
 
+  // ── Weekly Friendship Recap (every Sunday) ──
+  useEffect(() => {
+    if (hasCheckedRecap.current) return;
+    hasCheckedRecap.current = true;
+    const today = new Date();
+    const isSunday = today.getDay() === 0;
+    if (!isSunday) return;
+
+    // Check if recap was already shown this week
+    const checkRecap = async () => {
+      try {
+        const lastShown = await storage.getItem('weekly_recap_shown');
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        if (!lastShown || new Date(lastShown) < weekStart) {
+          // Fetch real recap data
+          const monday = new Date(today);
+          monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+          monday.setHours(0, 0, 0, 0);
+          const [convRes, matchRes, eventRes] = await Promise.all([
+            messagesApi.getConversations().catch(() => ({ data: { conversations: [] } })),
+            swipesApi.getMatches().catch(() => ({ data: { matches: [] } })),
+            eventsApi.getEvents('joined').catch(() => ({ data: { events: [] } })),
+          ]);
+          const weekMessages = (convRes.data?.conversations ?? []).filter(
+            (c) => c.last_message_at && new Date(c.last_message_at) >= monday
+          ).length;
+          setWeekStats({
+            messages: weekMessages,
+            interests: (matchRes.data?.matches ?? []).length,
+            events: (eventRes.data?.events ?? []).length,
+          });
+          setRecapModal(true);
+          await storage.setItem('weekly_recap_shown', today.toISOString());
+        }
+      } catch {
+        setRecapModal(true);
+      }
+    };
+    checkRecap();
+  }, []);
+
   const handleOpenDm = async (posterId) => {
     if (posterId === currentUser?.id || openingDm) return;
     setOpeningDm(posterId);
@@ -135,7 +236,7 @@ export default function WallScreen() {
     }
   };
 
-  const handleReact = async (postId) => {
+  const handleReact = async (postId, wasReacted) => {
     setPosts((prev) =>
       prev.map((p) =>
         p.id === postId
@@ -145,6 +246,11 @@ export default function WallScreen() {
     );
     try {
       await wallApi.reactToPost(postId);
+      if (wasReacted) {
+        snackbar.info('Réaction retirée', 2000);
+      } else {
+        snackbar.like('🌸 Réaction envoyée !', 2000);
+      }
     } catch {
       setPosts((prev) =>
         prev.map((p) =>
@@ -184,6 +290,7 @@ export default function WallScreen() {
       const uploadResult = await uploadApi.uploadImage({ uri: asset.uri, fileName: asset.fileName || `wall_${Date.now()}.jpg`, mimeType: asset.mimeType || 'image/jpeg' });
       await wallApi.createPost([uploadResult.url]);
       await fetchWall();
+      snackbar.success('Photo postée sur la Toile 🌸', 2500);
     } catch (err) {
       console.error('Wall upload error:', err);
       Alert.alert('Erreur', 'Impossible de poster la photo. Réessaie !');
@@ -196,8 +303,13 @@ export default function WallScreen() {
     Alert.alert('Supprimer', 'Veux-tu vraiment supprimer cette photo ?', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Supprimer', style: 'destructive', onPress: async () => {
-        try { await wallApi.deletePost(postId); fetchWall(); }
-        catch { Alert.alert('Erreur', 'Impossible de supprimer le post.'); }
+        try {
+          await wallApi.deletePost(postId);
+          fetchWall();
+          snackbar.info('Photo supprimée', 2000);
+        } catch {
+          Alert.alert('Erreur', 'Impossible de supprimer le post.');
+        }
       }},
     ]);
   };
@@ -212,7 +324,11 @@ export default function WallScreen() {
     const imgHeight = getImgHeight(globalIdx);
 
     return (
-      <View key={String(item.id)} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+      <Animated.View
+        key={String(item.id)}
+        entering={FadeInDown.delay(Math.min(globalIdx * 80, 480)).duration(400).springify().damping(16)}
+        style={[styles.card, { backgroundColor: colors.backgroundElement }]}
+      >
         {/* Photo — tap to fullscreen */}
         <TouchableOpacity activeOpacity={0.95} onPress={() => photoUri && setViewerPhoto(photoUri)} style={styles.cardImgWrap}>
           {photoUri ? (
@@ -254,19 +370,8 @@ export default function WallScreen() {
               </Text>
             </View>
 
-            {/* Flower reaction */}
-            <TouchableOpacity
-              style={styles.reactBtn}
-              onPress={() => handleReact(item.id)}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={[styles.reactFlower, { opacity: item.has_reacted ? 1 : 0.4 }]}>🌸</Text>
-              {item.reaction_count > 0 && (
-                <Text style={[styles.reactCount, { color: item.has_reacted ? PALETTE.rose : colors.textSecondary }]}>
-                  {item.reaction_count}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {/* Flower reaction with bounce */}
+            <ReactionButton item={item} onReact={handleReact} colors={colors} />
           </View>
 
           {/* Action buttons row */}
@@ -300,20 +405,22 @@ export default function WallScreen() {
                 }
               </TouchableOpacity>
             )}
-          </View>
+            </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
-  // One post per user — most recent wins (posts are already sorted newest-first)
+  // One post per user — sorted by most liked (reaction_count descending)
   const displayPosts = useMemo(() => {
     const seen = new Set();
-    return posts.filter((p) => {
-      if (seen.has(p.user_initiator)) return false;
-      seen.add(p.user_initiator);
-      return true;
-    });
+    return posts
+      .filter((p) => {
+        if (seen.has(p.user_initiator)) return false;
+        seen.add(p.user_initiator);
+        return true;
+      })
+      .sort((a, b) => (b.reaction_count || 0) - (a.reaction_count || 0));
   }, [posts]);
 
   const leftPosts = displayPosts.filter((_, i) => i % 2 === 0);
@@ -453,6 +560,58 @@ export default function WallScreen() {
             <Ionicons name="close" size={22} color="#fff" />
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ── Weekly Friendship Recap Modal ── */}
+      <Modal visible={recapModal} transparent animationType="slide" onRequestClose={() => setRecapModal(false)}>
+        <View style={styles.recapOverlay}>
+          <View style={[styles.recapBox, { backgroundColor: '#0F0A2A' }]}>
+            {/* Stars */}
+            <Text style={styles.recapModalStar1}>✦</Text>
+            <Text style={styles.recapModalStar2}>✦</Text>
+            <Text style={styles.recapModalStar3}>✦</Text>
+
+            <View style={styles.recapHeaderIcon}>
+              <Text style={styles.recapHeaderEmoji}>📊</Text>
+            </View>
+            <Text style={styles.recapTitle}>Bilan de ta semaine ✨</Text>
+            <Text style={styles.recapSub}>Voici ton recap d'amitié cette semaine sur Palz !</Text>
+
+            <View style={styles.recapStats}>
+              {[
+                { value: weekStats?.messages ?? 0, label: 'conversations actives', icon: 'chatbubbles-outline', color: '#818CF8', bg: 'rgba(99,102,241,0.12)', emoji: '💬' },
+                { value: weekStats?.interests ?? 0, label: 'connexions avec intérêts communs', icon: 'sparkles-outline', color: '#34D399', bg: 'rgba(52,211,153,0.12)', emoji: '🎯' },
+                { value: weekStats?.events ?? 0, label: 'événement rejoint', icon: 'calendar-outline', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', emoji: '🎉' },
+              ].map(({ value, label, icon, color, bg, emoji }) => (
+                <View key={label} style={[styles.recapStatRow, { backgroundColor: bg }]}>
+                  <View style={[styles.recapStatIconWrap, { backgroundColor: color + '28' }]}>
+                    <Ionicons name={icon} size={18} color={color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.recapStatValue, { color: '#fff' }]}>{value}</Text>
+                    <Text style={[styles.recapStatLabel, { color: 'rgba(255,255,255,0.5)' }]}>{label}</Text>
+                  </View>
+                  <Text style={styles.recapStatEmoji}>{emoji}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Vibe */}
+            <View style={styles.recapVibeRowModal}>
+              <Ionicons name="flame" size={14} color="#F59E0B" />
+              <Text style={styles.recapVibeLabelModal}>Ton vibe fort : </Text>
+              <Text style={styles.recapVibeValueModal}>"{getTopVibeWall(currentUser)}"</Text>
+            </View>
+
+            <Text style={styles.recapFooter}>
+              Rendez-vous dimanche prochain ! 🌸
+            </Text>
+
+            <TouchableOpacity style={styles.recapBtn} onPress={() => setRecapModal(false)} activeOpacity={0.8}>
+              <Text style={styles.recapBtnText}>Super ! Merci 💕</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -605,4 +764,33 @@ const styles = StyleSheet.create({
   viewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
   viewerImg: { width: SCREEN_WIDTH, height: SCREEN_WIDTH * 1.3 },
   viewerClose: { position: 'absolute', top: 56, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+
+  // ── Weekly recap modal ──
+  recapOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  recapBox: { width: '100%', borderRadius: 28, padding: 24, alignItems: 'center', gap: 14, overflow: 'hidden',
+    shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 16 },
+  recapModalStar1: { position: 'absolute', top: 12, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.25)' },
+  recapModalStar2: { position: 'absolute', top: 28, right: 50, fontSize: 7, color: 'rgba(255,255,255,0.15)' },
+  recapModalStar3: { position: 'absolute', top: 20, right: 84, fontSize: 9, color: 'rgba(255,255,255,0.20)' },
+  recapHeaderIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(139,92,246,0.18)', alignItems: 'center', justifyContent: 'center' },
+  recapHeaderEmoji: { fontSize: 28 },
+  recapTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3, color: '#fff' },
+  recapSub: { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  recapStats: { width: '100%', gap: 8, marginTop: 2 },
+  recapStatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16 },
+  recapStatIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  recapStatValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  recapStatLabel: { fontSize: 11, fontWeight: '500', marginTop: 1 },
+  recapStatEmoji: { fontSize: 20 },
+  recapVibeRowModal: { flexDirection: 'row', alignItems: 'center', gap: 5, width: '100%',
+    backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  recapVibeLabelModal: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  recapVibeValueModal: { fontSize: 12, color: '#FCD34D', fontWeight: '700', flex: 1 },
+  recapFooter: { fontSize: 12, fontWeight: '500', textAlign: 'center', color: 'rgba(255,255,255,0.4)' },
+  recapBtn: {
+    width: '100%', alignItems: 'center', paddingVertical: 14, borderRadius: 18,
+    backgroundColor: '#FF8FA3', shadowColor: '#FF8FA3',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6, marginTop: 2,
+  },
+  recapBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

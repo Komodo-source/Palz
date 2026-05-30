@@ -14,6 +14,7 @@ import {
   ScrollView,
   Modal,
 } from 'react-native';
+
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { groupsApi, messagesApi, uploadApi, getStorageUrl } from '@/services/api';
@@ -22,6 +23,26 @@ import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
+import { useSnackbar } from '@/contexts/snackbar';
+import * as Location from 'expo-location';
+
+const OUTDOOR_KEYWORDS = ['sport', 'plage', 'parc', 'balade', 'randon', 'extérieur', 'jardin', 'nature', 'piscine', 'forêt', 'vélo'];
+
+function isOutdoorActivity(activity) {
+  const text = ((activity?.title ?? '') + ' ' + (activity?.description ?? '') + ' ' + (activity?.tag ?? '')).toLowerCase();
+  return OUTDOOR_KEYWORDS.some((k) => text.includes(k));
+}
+
+function parseWeatherCode(code, precipProb) {
+  if (code === 0 || code === 1) return { emoji: '☀️', label: 'Beau temps', ok: true };
+  if (code === 2 || code === 3) return { emoji: '⛅', label: 'Nuageux', ok: true };
+  if (code >= 45 && code <= 48) return { emoji: '🌫️', label: 'Brouillard', ok: false };
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { emoji: '🌧️', label: 'Pluie prévue', ok: false };
+  if (code >= 71 && code <= 77) return { emoji: '❄️', label: 'Neige', ok: false };
+  if (code >= 95) return { emoji: '⛈️', label: 'Orage', ok: false };
+  if (precipProb > 60) return { emoji: '🌦️', label: 'Risque pluie', ok: false };
+  return { emoji: '🌤️', label: 'Variable', ok: true };
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -129,6 +150,7 @@ export default function GroupsScreen() {
   const { user: currentUser } = useAuth();
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const snackbar = useSnackbar();
 
   const [group, setGroup] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -162,6 +184,7 @@ export default function GroupsScreen() {
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const flatListRef = useRef(null);
   const pollInterval = useRef(null);
+  const [weather, setWeather] = useState(null);
 
   const fetchGroup = useCallback(async () => {
     try {
@@ -172,6 +195,23 @@ export default function GroupsScreen() {
       Alert.alert('Erreur', 'Impossible de charger le groupe.');
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const fetchWeather = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      const { latitude, longitude } = loc.coords;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude.toFixed(4)}&longitude=${longitude.toFixed(4)}&daily=weathercode,precipitation_probability_max&timezone=auto&forecast_days=2`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const code = data.daily?.weathercode?.[0] ?? 0;
+      const precip = data.daily?.precipitation_probability_max?.[0] ?? 0;
+      setWeather(parseWeatherCode(code, precip));
+    } catch {
+      // Non-critical
     }
   }, []);
 
@@ -189,7 +229,8 @@ export default function GroupsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchGroup();
-    }, [fetchGroup])
+      fetchWeather();
+    }, [fetchGroup, fetchWeather])
   );
 
   useEffect(() => {
@@ -207,6 +248,7 @@ export default function GroupsScreen() {
     try {
       await groupsApi.generate();
       await fetchGroup();
+      snackbar.success('✨ Cercle créé ! Découvre tes nouvelles Palz !', 3000);
     } catch (err) {
       const msg = err.response?.data?.error || 'Impossible de créer un groupe.';
       Alert.alert('Erreur', msg);
@@ -227,6 +269,7 @@ export default function GroupsScreen() {
             setGroup(null);
             setShowChat(false);
             setMessages([]);
+            snackbar.info('Tu as quitté le cercle. À la semaine prochaine 🌸', 2500);
           } catch (err) {
             console.error('Leave group error:', err);
             Alert.alert('Erreur', 'Impossible de quitter le groupe.');
@@ -245,7 +288,7 @@ export default function GroupsScreen() {
 
       if (res.data?.resolved) {
         if (res.data.group_continues) {
-          Alert.alert('✅ Le groupe continue !', 'Une nouvelle semaine commence.');
+          snackbar.success('✅ Le groupe continue pour une nouvelle semaine !', 2500);
         } else {
           // Show dissolution feedback form before clearing the group
           setPendingDissGroupId(group.id);
@@ -278,7 +321,7 @@ export default function GroupsScreen() {
       await fetchMessages();
     } catch (err) {
       console.error('Send message error:', err);
-      Alert.alert('Erreur', 'Impossible d\'envoyer le message.');
+      snackbar.error('Message non envoyé', 2000);
       setInputText(text);
     } finally {
       setSending(false);
@@ -341,9 +384,10 @@ export default function GroupsScreen() {
         media_url: url,
       });
       await fetchMessages();
+      snackbar.like('🎤 Message vocal envoyé !', 2000);
     } catch (err) {
       console.error('Group voice send error:', err);
-      Alert.alert('Erreur', "Le message vocal n'a pas pu être envoyé.");
+      snackbar.error('Message vocal non envoyé', 2000);
     } finally {
       setUploadingVoice(false);
     }
@@ -388,7 +432,7 @@ export default function GroupsScreen() {
     setSubmittingMemberVotes(true);
     try {
       await groupsApi.submitMemberVotes(group.id, votes);
-      Alert.alert('Votes enregistrés', 'Tes votes sur les membres ont été pris en compte.');
+      snackbar.success('Votes enregistrés ✨', 2000);
     } catch (err) {
       console.error('Submit member votes error:', err);
       Alert.alert('Erreur', 'Impossible d\'enregistrer les votes.');
@@ -794,6 +838,14 @@ export default function GroupsScreen() {
                     <Text style={[styles.activityDesc, { color: colors.textSecondary }]} numberOfLines={1}>
                       {activity.description}
                     </Text>
+                    {isOutdoorActivity(activity) && weather && (
+                      <View style={[styles.activityWeatherBadge, { backgroundColor: weather.ok ? '#E8F5E9' : '#FEF3C7' }]}>
+                        <Text style={styles.activityWeatherEmoji}>{weather.emoji}</Text>
+                        <Text style={[styles.activityWeatherText, { color: weather.ok ? '#166534' : '#92400E' }]}>
+                          {weather.label}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <TouchableOpacity
                     style={[
@@ -1239,14 +1291,13 @@ export default function GroupsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Cercles</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           {group ? 'Ton cercle de la semaine' : 'Rejoins un groupe cette semaine'}
-        </Text>
-      </View>
+        </Text>        </View>
 
       {!group ? (
         /* No group - show generate button */
@@ -1599,6 +1650,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  activityWeatherBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 3,
+  },
+  activityWeatherEmoji: { fontSize: 11 },
+  activityWeatherText: { fontSize: 11, fontWeight: '700' },
 
   voteCountdownCard: {
     flexDirection: 'row',

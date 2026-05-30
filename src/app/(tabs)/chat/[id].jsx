@@ -13,11 +13,12 @@ import {
   Alert,
   Dimensions,
   Animated,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { messagesApi, uploadApi, getStorageUrl } from '@/services/api';
+import { messagesApi, usersApi, uploadApi, getStorageUrl } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -69,7 +70,14 @@ function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const toggle = () => { if (isPlaying) player.pause(); else player.play(); };
+  const toggle = async () => {
+    if (isPlaying) {
+      player.pause();
+    } else {
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      player.play();
+    }
+  };
   const activeColor = isMine ? '#fff' : PALETTE.rose;
   const inactiveColor = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
 
@@ -409,7 +417,7 @@ export default function ChatScreen() {
     setIsRecording(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       const uri = recorder.uri;
       if (uri) await sendVoiceMessage(uri);
     } catch (err) {
@@ -422,8 +430,32 @@ export default function ChatScreen() {
     setIsRecording(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     } catch (_) {}
+  };
+
+  const reportUser = () => {
+    if (!conversation?.other_user_id) return;
+    Alert.alert(
+      'Signaler cette utilisatrice',
+      'Es-tu sûre de vouloir signaler ce profil ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Signaler',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await usersApi.reportUser({ reportedUserID: conversation.other_user_id, reason: 'inappropriate' });
+              Alert.alert('Signalement envoyé', 'Merci, notre équipe va examiner ce profil.');
+            } catch (err) {
+              console.error('Report Error:', err);
+              Alert.alert('Erreur', 'Impossible d\'envoyer le signalement.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const sendVoiceMessage = async (uri) => {
@@ -463,7 +495,8 @@ export default function ChatScreen() {
   // ── Ice Breaker card ──
   const renderIceBreakerCard = () => {
     if (!iceBreaker || iceBreakerDismissed) return null;
-    const message = iceBreaker?.message || iceBreaker?.ice_breaker || '';
+    const raw = iceBreaker?.message || iceBreaker?.ice_breaker || '';
+    const message = typeof raw === 'string' ? raw : '';
     if (!message) return null;
 
     const translateY = iceBreakerAnim.interpolate({
@@ -491,7 +524,7 @@ export default function ChatScreen() {
             <View style={[styles.iceBreakerShimmerDot, { backgroundColor: 'rgba(255,143,163,0.19)' }]} />
             <View style={[styles.iceBreakerShimmerDot2, { backgroundColor: 'rgba(232,213,245,0.15)' }]} />
           </View>
-          
+
 
           {/* Header */}
           <View style={styles.iceBreakerHeader}>
@@ -552,7 +585,7 @@ export default function ChatScreen() {
     const img = Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
     return img ? getStorageUrl(img) : null;
   })();
-  const otherUserName = conversation?.other_user_name || 'Chat';
+  const otherUserName = typeof conversation?.other_user_name === 'string' ? conversation.other_user_name : 'Chat';
 
   const renderMessage = ({ item, index }) => {
     const isMine = item.sender_id === currentUser?.id;
@@ -656,7 +689,7 @@ export default function ChatScreen() {
                 styles.msgText,
                 { color: isMine ? '#fff' : colors.text },
               ]}>
-                {item.content}
+                {typeof item.content === 'string' ? item.content : ''}
               </Text>
               <View style={styles.msgMeta}>
                 <Text style={[styles.msgTime, { color: isMine ? 'rgba(255,255,255,0.65)' : colors.textSecondary }]}>
@@ -730,6 +763,15 @@ export default function ChatScreen() {
                 </View>
                 <Text style={[styles.headerSub, { color: PALETTE.rose }]}>En ligne</Text>
               </View>
+            </TouchableOpacity>
+          ),
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={reportUser}
+              activeOpacity={0.7}
+              style={{ paddingLeft: 8, paddingRight: 4 }}
+            >
+              <Ionicons name="flag-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           ),
           headerStyle: { backgroundColor: colors.background },

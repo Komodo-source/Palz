@@ -28,7 +28,7 @@ const TABS = [
   { key: 'profile', title: 'Profil', icon: 'person-outline' },
 ];
 
-function TabBarIcon({ name, focused }) {
+function TabIcon({ name, focused }) {
   const icons = {
     events: 'calendar-outline',
     wall: 'images-outline',
@@ -36,12 +36,29 @@ function TabBarIcon({ name, focused }) {
     messages: 'chatbubbles-outline',
     profile: 'person-outline',
   };
+
   return (
     <Ionicons
       name={icons[name] || 'ellipse'}
       size={focused ? 26 : 24}
       color={focused ? '#FF8FA3' : '#B0A098'}
     />
+  );
+}
+
+function TabLabel({ label, focused }) {
+  return (
+    <Text
+      style={[
+        styles.tabLabel,
+        {
+          color: focused ? '#FF8FA3' : '#B0A098',
+          fontWeight: focused ? '700' : '500',
+        },
+      ]}
+    >
+      {label}
+    </Text>
   );
 }
 
@@ -71,18 +88,8 @@ function BottomTabBar({ activeIndex, onTabPress, colors }) {
             onPress={() => onTabPress(index)}
             activeOpacity={0.7}
           >
-            <TabBarIcon name={tab.key} focused={isFocused} />
-            <Text
-              style={[
-                styles.tabLabel,
-                {
-              color: isFocused ? '#FF8FA3' : colors.textSecondary,
-              fontWeight: isFocused ? '700' : '500',
-                },
-              ]}
-            >
-              {tab.title}
-            </Text>
+            <TabIcon name={tab.key} focused={isFocused} />
+            <TabLabel label={tab.title} focused={isFocused} />
           </TouchableOpacity>
         );
       })}
