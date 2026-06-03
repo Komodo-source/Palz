@@ -89,8 +89,9 @@ export default function ProfileEditingScreen() {
   const [work, setWork] = useState(user?.work || '');
   const [situation, setSituation] = useState(user?.situation || '');
   const [location, setLocation] = useState(user?.location || user?.home_location || '');
-  const [phone, setPhone] = useState(user?.phone || '');
   const [dateOfBirth, setDateOfBirth] = useState(user?.date_of_birth || '');
+  const [ageMin, setAgeMin] = useState(user?.age_min || 18);
+  const [ageMax, setAgeMax] = useState(user?.age_max || 40);
   const [showSituationPicker, setShowSituationPicker] = useState(false);
 
   // ── Zodiac ──
@@ -160,8 +161,9 @@ export default function ProfileEditingScreen() {
       setWork(user.work || '');
       setSituation(user.situation || '');
       setLocation(user.location || user.home_location || '');
-      setPhone(user.phone || '');
       setDateOfBirth(user.date_of_birth || '');
+      if (user.age_min) setAgeMin(user.age_min);
+      if (user.age_max) setAgeMax(user.age_max);
       if (user.astrology_sign_id) setSelectedZodiacId(user.astrology_sign_id);
 
       const parsedPhotos = parseDbJson(user.profile_image);
@@ -272,7 +274,7 @@ export default function ProfileEditingScreen() {
   const uploadPhoto = async (uri) => {
     setIsUploadingPhoto(true);
     try {
-      const ext = uri.split('.').pop() || 'jpg';
+      const ext = (uri.match(/\.([a-zA-Z0-9]+)(?:\?|#|$)/)?.[1] ?? 'jpg').toLowerCase();
       const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const { url } = await uploadApi.uploadImage({
         uri,
@@ -384,11 +386,10 @@ export default function ProfileEditingScreen() {
         return;
       }
 
-      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
-      // Options were given to useAudioRecorder — no need to pass them again
       await recorder.prepareToRecordAsync();
-      recorder.record({ forDuration: 30 });
+      recorder.record();
 
       setIsRecording(true);
     } catch (err) {
@@ -400,15 +401,14 @@ export default function ProfileEditingScreen() {
   const stopRecording = async () => {
     setIsRecording(false);
 
-    // Stop recorder — ignore errors if it already stopped (e.g. forDuration expired)
     try {
       await recorder.stop();
     } catch {
-      // Recorder may have auto-stopped after forDuration — that's fine
+      // Recorder may have auto-stopped — that's fine
     }
 
     try {
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     } catch {}
 
     // URI is a property on the recorder object, available after stop
@@ -446,11 +446,12 @@ export default function ProfileEditingScreen() {
     }
   };
 
-  const playAudio = () => {
+  const playAudio = async () => {
     if (playerStatus.playing) {
       player.pause();
       setIsPlayingAudio(false);
     } else if (recordedAudioUri) {
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       player.play();
       setIsPlayingAudio(true);
     }
@@ -475,8 +476,9 @@ export default function ProfileEditingScreen() {
       if (work !== (user?.work || '')) updateData.work = work;
       if (situation !== (user?.situation || '')) updateData.situation = situation;
       if (location !== (user?.location || user?.home_location || '')) updateData.location = location;
-      if (phone !== (user?.phone || '')) updateData.phone = phone;
       if (dateOfBirth !== (user?.date_of_birth || '')) updateData.date_of_birth = dateOfBirth;
+      if (ageMin !== (user?.age_min || 18)) updateData.age_min = ageMin;
+      if (ageMax !== (user?.age_max || 40)) updateData.age_max = ageMax;
       if (selectedZodiacId && selectedZodiacId !== user?.astrology_sign_id) {
         updateData.astrology_sign_id = selectedZodiacId;
       }
@@ -570,7 +572,13 @@ export default function ProfileEditingScreen() {
             <Ionicons name="chevron-back" size={24} color={PALETTE.rose} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Mon Profil</Text>
-          <View style={styles.backButton} />
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/profil/settings')}
+            style={styles.backButton}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="settings-outline" size={22} color={PALETTE.rose} />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.subtitle}>
@@ -775,21 +783,63 @@ export default function ProfileEditingScreen() {
           />
         </View>
 
-        {/* ── Phone Section ── */}
+        {/* ── Age Range Section ── */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="call-outline" size={20} color={PALETTE.rose} />
-            <Text style={styles.sectionTitle}>Téléphone</Text>
+            <Ionicons name="people-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Tranche d'âge recherchée</Text>
           </View>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex: +33 6 12 34 56 78"
-            placeholderTextColor={PALETTE.textLight}
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            maxLength={20}
-          />
+          <Text style={styles.sectionHint}>Âge des personnes que tu souhaites rencontrer</Text>
+          <View style={styles.ageRangeRow}>
+            <View style={styles.ageRangeBox}>
+              <Text style={styles.ageRangeLabel}>Minimum</Text>
+              <View style={styles.ageRangeControls}>
+                <TouchableOpacity
+                  style={styles.ageBtn}
+                  onPress={() => setAgeMin((a) => Math.max(18, a - 1))}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={18} color={PALETTE.rose} />
+                </TouchableOpacity>
+                <Text style={styles.ageRangeValue}>{ageMin}</Text>
+                <TouchableOpacity
+                  style={styles.ageBtn}
+                  onPress={() => setAgeMin((a) => Math.min(ageMax - 1, a + 1))}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={18} color={PALETTE.rose} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.ageRangeDash}>
+              <Text style={styles.ageRangeDashText}>–</Text>
+            </View>
+            <View style={styles.ageRangeBox}>
+              <Text style={styles.ageRangeLabel}>Maximum</Text>
+              <View style={styles.ageRangeControls}>
+                <TouchableOpacity
+                  style={styles.ageBtn}
+                  onPress={() => setAgeMax((a) => Math.max(ageMin + 1, a - 1))}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={18} color={PALETTE.rose} />
+                </TouchableOpacity>
+                <Text style={styles.ageRangeValue}>{ageMax}</Text>
+                <TouchableOpacity
+                  style={styles.ageBtn}
+                  onPress={() => setAgeMax((a) => Math.min(99, a + 1))}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={18} color={PALETTE.rose} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+          <View style={styles.ageRangeTrack}>
+            <View style={{ flex: Math.max(0, ageMin - 18), backgroundColor: 'transparent' }} />
+            <View style={[styles.ageRangeFill, { flex: Math.max(1, ageMax - ageMin) }]} />
+            <View style={{ flex: Math.max(0, 99 - ageMax), backgroundColor: 'transparent' }} />
+          </View>
         </View>
 
         {/* ── Date of Birth Section ── */}
@@ -1628,5 +1678,75 @@ const styles = StyleSheet.create({
     borderBottomColor: PALETTE.rosePale,
     borderRadius: 12,
     marginBottom: 2,
+  },
+
+  // ── Age Range ──
+  ageRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 14,
+  },
+  ageRangeBox: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: PALETTE.rosePale,
+    borderRadius: 16,
+    paddingVertical: 14,
+  },
+  ageRangeLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  ageRangeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  ageBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: PALETTE.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  ageRangeValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: PALETTE.rose,
+    minWidth: 34,
+    textAlign: 'center',
+  },
+  ageRangeDash: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ageRangeDashText: {
+    fontSize: 22,
+    fontWeight: '300',
+    color: PALETTE.textLight,
+  },
+  ageRangeTrack: {
+    flexDirection: 'row',
+    height: 4,
+    backgroundColor: PALETTE.rosePale,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  ageRangeFill: {
+    height: 4,
+    backgroundColor: PALETTE.rose,
   },
 });

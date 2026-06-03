@@ -174,14 +174,15 @@ export default function GroupsScreen() {
   const [uploadingVoice, setUploadingVoice] = useState(false);
   const recordTimerRef = useRef(null);
 
-  // Dissolution feedback form
+  // Dissolution / weekly-rating form
   const [dissolutionModal, setDissolutionModal] = useState(false);
   const [dissStep, setDissStep] = useState(0); // 0=group rating, 1=member ratings
   const [groupRating, setGroupRating] = useState(0);
-  const [memberRatings, setMemberRatings] = useState({}); // { [memberId]: { dim: 0|1|null } }
+  const [memberRatings, setMemberRatings] = useState({}); // { [memberId]: { want_again, comfort, in_common } }
   const [pendingDissGroupId, setPendingDissGroupId] = useState(null);
   const [pendingMembers, setPendingMembers] = useState([]);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [ratingOnlyMode, setRatingOnlyMode] = useState(false); // true = rating without dissolving
   const flatListRef = useRef(null);
   const pollInterval = useRef(null);
   const [weather, setWeather] = useState(null);
@@ -502,23 +503,20 @@ export default function GroupsScreen() {
     }
   };
 
-  const setMemberDimension = (memberId, dimension, value) => {
+  const setMemberScore = (memberId, key, value) => {
     setMemberRatings((prev) => ({
       ...prev,
       [memberId]: {
-        spontaneous_vs_planner: null,
-        sporty_vs_chill: null,
-        party_vs_coffee: null,
-        deep_vs_casual: null,
-        group_role: null,
+        want_again: 0, comfort: 0, in_common: 0,
         ...(prev[memberId] || {}),
-        [dimension]: value,
+        [key]: value,
       },
     }));
   };
 
   const finalizeDissolution = () => {
     setDissolutionModal(false);
+    setRatingOnlyMode(false);
     setGroup(null);
     setShowChat(false);
     setMessages([]);
@@ -526,23 +524,41 @@ export default function GroupsScreen() {
     setPendingMembers([]);
   };
 
+  const handleOpenWeeklyRating = () => {
+    if (!group) return;
+    setPendingDissGroupId(group.id);
+    setPendingMembers(group.members || []);
+    setGroupRating(0);
+    setMemberRatings({});
+    setDissStep(0);
+    setRatingOnlyMode(true);
+    setDissolutionModal(true);
+  };
+
   const handleSubmitDissolution = async () => {
     if (submittingFeedback) return;
     setSubmittingFeedback(true);
     try {
+      if (groupRating > 0) {
+        await groupsApi.submitDissolutionFeedback(pendingDissGroupId, groupRating, []);
+      }
       const ratings = Object.entries(memberRatings)
-        .filter(([, r]) => Object.values(r).some((v) => v !== null))
-        .map(([member_id, r]) => ({ member_id, ...r }));
-      await groupsApi.submitDissolutionFeedback(
-        pendingDissGroupId,
-        groupRating > 0 ? groupRating : null,
-        ratings
-      );
+        .filter(([, r]) => r.want_again > 0 && r.comfort > 0 && r.in_common > 0)
+        .map(([member_id, r]) => ({ rated_user_id: member_id, ...r }));
+      if (ratings.length > 0) {
+        await groupsApi.submitInteractionRatings(pendingDissGroupId, ratings);
+      }
+      snackbar.success('Merci pour ton évaluation ! ✨', 2000);
     } catch (err) {
       console.error('Dissolution feedback error:', err);
     } finally {
       setSubmittingFeedback(false);
-      finalizeDissolution();
+      if (ratingOnlyMode) {
+        setDissolutionModal(false);
+        setRatingOnlyMode(false);
+      } else {
+        finalizeDissolution();
+      }
     }
   };
 
@@ -578,12 +594,10 @@ export default function GroupsScreen() {
     return Math.ceil((showFrom.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
   }, [group?.week_end, isEndOfWeek]);
 
-  const DIMENSIONS = [
-    { key: 'party_vs_coffee',        emoji: '⚡', label: 'Énergie sociale',      question: 'Son énergie sociale ?',           left: 'Extravertie',    right: 'Introvertie'    },
-    { key: 'spontaneous_vs_planner', emoji: '📅', label: 'Planning',              question: 'Son rapport au planning ?',        left: 'Spontanée',      right: 'Planificatrice' },
-    { key: 'sporty_vs_chill',        emoji: '🏃', label: "Style d'activités",     question: 'Ses activités préférées ?',        left: 'Active & sport', right: 'Chill'          },
-    { key: 'deep_vs_casual',         emoji: '💬', label: 'Conversations',         question: 'Son style de conversation ?',      left: 'Deep talks',     right: 'Légèreté'       },
-    { key: 'group_role',             emoji: '🌟', label: 'Rôle dans le groupe',   question: 'Son rôle dans le groupe ?',        left: 'Meneuse',        right: 'Soutien'        },
+  const RATING_QUESTIONS = [
+    { key: 'want_again', emoji: '🔄', question: 'Tu voudrais interagir à nouveau avec elle ?' },
+    { key: 'comfort',    emoji: '💜', question: "Tu te sentais à l'aise en lui parlant ?" },
+    { key: 'in_common',  emoji: '✨', question: 'Vous avez des choses en commun ?' },
   ];
 
   const renderDissolutionModal = () => {
@@ -632,7 +646,7 @@ export default function GroupsScreen() {
                 </View>
               </ScrollView>
             ) : (
-              /* ── Step 2: Member personality ratings ── */
+              /* ── Step 2: 3-question 1–5 member ratings ── */
               <>
                 <View style={dissStyles.step2Header}>
                   <TouchableOpacity onPress={() => setDissStep(0)} activeOpacity={0.7}>
@@ -642,7 +656,7 @@ export default function GroupsScreen() {
                   <View style={{ width: 22 }} />
                 </View>
                 <Text style={[dissStyles.sheetSub, { color: colors.textSecondary, paddingHorizontal: Spacing.four, marginBottom: 8 }]}>
-                  Comment tu les percevrais ?
+                  Tes réponses améliorent tes prochains groupes
                 </Text>
 
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dissStyles.membersList}>
@@ -650,7 +664,7 @@ export default function GroupsScreen() {
                     const pic = Array.isArray(parseDbJson(member.profile_image))
                       ? parseDbJson(member.profile_image)[0]
                       : null;
-                    const ratings = memberRatings[member.id] || {};
+                    const ratings = memberRatings[member.id] || { want_again: 0, comfort: 0, in_common: 0 };
 
                     return (
                       <View key={member.id} style={[dissStyles.memberBlock, { backgroundColor: colors.backgroundElement }]}>
@@ -667,38 +681,24 @@ export default function GroupsScreen() {
                           </Text>
                         </View>
 
-                        {DIMENSIONS.map((dim) => (
-                          <View key={dim.key} style={dissStyles.dimBlock}>
+                        {RATING_QUESTIONS.map(({ key, emoji, question }) => (
+                          <View key={key} style={dissStyles.dimBlock}>
                             <Text style={[dissStyles.dimQuestion, { color: colors.textSecondary }]}>
-                              {dim.emoji}  {dim.question}
+                              {emoji}  {question}
                             </Text>
-                            <View style={dissStyles.dimRow}>
-                              <TouchableOpacity
-                                style={[
-                                  dissStyles.dimBtn,
-                                  ratings[dim.key] === 0 && dissStyles.dimBtnActive,
-                                ]}
-                                onPress={() => setMemberDimension(member.id, dim.key, ratings[dim.key] === 0 ? null : 0)}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[
-                                  dissStyles.dimBtnText,
-                                  ratings[dim.key] === 0 && dissStyles.dimBtnTextActive,
-                                ]}>{dim.left}</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  dissStyles.dimBtn,
-                                  ratings[dim.key] === 1 && dissStyles.dimBtnActive,
-                                ]}
-                                onPress={() => setMemberDimension(member.id, dim.key, ratings[dim.key] === 1 ? null : 1)}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[
-                                  dissStyles.dimBtnText,
-                                  ratings[dim.key] === 1 && dissStyles.dimBtnTextActive,
-                                ]}>{dim.right}</Text>
-                              </TouchableOpacity>
+                            <View style={dissStyles.ratingRow}>
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <TouchableOpacity
+                                  key={star}
+                                  onPress={() => setMemberScore(member.id, key, star === ratings[key] ? 0 : star)}
+                                  activeOpacity={0.7}
+                                  style={dissStyles.ratingBtn}
+                                >
+                                  <Text style={[dissStyles.ratingStar, { opacity: star <= (ratings[key] || 0) ? 1 : 0.2 }]}>
+                                    ⭐
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
                             </View>
                           </View>
                         ))}
@@ -718,7 +718,11 @@ export default function GroupsScreen() {
                     }
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={dissStyles.skipBtnBottom} onPress={finalizeDissolution} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={dissStyles.skipBtnBottom}
+                    onPress={() => ratingOnlyMode ? setDissolutionModal(false) : finalizeDissolution()}
+                    activeOpacity={0.7}
+                  >
                     <Text style={[dissStyles.skipBtnText, { color: colors.textSecondary }]}>Passer cette étape</Text>
                   </TouchableOpacity>
 
@@ -735,6 +739,27 @@ export default function GroupsScreen() {
   // ── Render Group View ──
   const renderGroupView = () => {
     if (!group) return null;
+
+    // ── DEBUG: log any field that might be an object before rendering ──
+    const __dbgFields = {
+      'group.common_interest': group.common_interest,
+      'group.rendezvous_location': group.rendezvous_location,
+      'group.vote_summary': group.vote_summary,
+    };
+    Object.entries(__dbgFields).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+        console.warn('[OBJECT RENDER BUG]', k, JSON.stringify(v));
+      }
+    });
+    (group.members || []).forEach((m, i) => {
+      ['full_name', 'user_name', 'location', 'bio', 'labels', 'interests'].forEach((f) => {
+        const v = m[f];
+        if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+          console.warn(`[OBJECT RENDER BUG] member[${i}].${f}`, JSON.stringify(v));
+        }
+      });
+    });
+    // ── END DEBUG ──
 
     const members = group.members || [];
     const voteSummary = group.vote_summary || { continue: 0, disband: 0, total: 0 };
@@ -781,7 +806,7 @@ export default function GroupsScreen() {
           <Text style={[styles.cardTitle, { color: colors.text }]}>
             <Ionicons name="location-outline" size={18} color={PALETTE.rose} />  Rendez-vous
           </Text>
-          {group.rendezvous_location ? (
+          {typeof group.rendezvous_location === 'string' && group.rendezvous_location ? (
             <View style={styles.rendezvousInfo}>
               <Text style={[styles.rendezvousLocation, { color: colors.text }]}>
                 {group.rendezvous_location}
@@ -834,9 +859,9 @@ export default function GroupsScreen() {
                     <Ionicons name={activity.icon || 'star-outline'} size={22} color={activity.color} />
                   </View>
                   <View style={styles.activityInfo}>
-                    <Text style={[styles.activityTitle, { color: colors.text }]}>{activity.title}</Text>
+                    <Text style={[styles.activityTitle, { color: colors.text }]}>{typeof activity.title === 'string' ? activity.title : ''}</Text>
                     <Text style={[styles.activityDesc, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {activity.description}
+                      {typeof activity.description === 'string' ? activity.description : ''}
                     </Text>
                     {isOutdoorActivity(activity) && weather && (
                       <View style={[styles.activityWeatherBadge, { backgroundColor: weather.ok ? '#E8F5E9' : '#FEF3C7' }]}>
@@ -897,9 +922,9 @@ export default function GroupsScreen() {
               const showPhoto = isSelf || revealLevel >= 1;
               const showFullName = isSelf || revealLevel >= 1;
               const showLocation = isSelf || revealLevel >= 2;
-              const firstName = (member.full_name || member.user_name || '?').split(' ')[0];
+              const firstName = String(member.full_name || member.user_name || '?').split(' ')[0];
               const rawMemberLabels = member.labels && typeof member.labels === 'object' ? member.labels : {};
-              const firstVibe = rawMemberLabels.vibe?.[0] || null;
+              const firstVibe = typeof rawMemberLabels.vibe?.[0] === 'string' ? rawMemberLabels.vibe[0] : null;
 
               return (
                 <TouchableOpacity
@@ -928,7 +953,7 @@ export default function GroupsScreen() {
                         <Text style={styles.memberRevealLabelText}>{firstVibe}</Text>
                       </View>
                     )}
-                    {showLocation && member.location && (
+                    {showLocation && typeof member.location === 'string' && member.location && (
                       <Text style={[styles.memberLocation, { color: colors.textSecondary }]}>
                         {member.location}
                       </Text>
@@ -1048,6 +1073,23 @@ export default function GroupsScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            {/* Interaction ratings card */}
+            <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>
+                <Ionicons name="star-outline" size={18} color={PALETTE.rose} />  Évalue tes Palz
+              </Text>
+              <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
+                3 questions par membre pour améliorer tes prochains groupes
+              </Text>
+              <TouchableOpacity
+                style={[styles.actionButton, { marginTop: Spacing.two }]}
+                onPress={handleOpenWeeklyRating}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="star" size={18} color={PALETTE.rose} />
+                <Text style={styles.actionButtonText}>Donner mon avis sur la semaine</Text>
+              </TouchableOpacity>
+            </View>
           </>
         ) : (
           <View style={[styles.card, styles.voteCountdownCard, { backgroundColor: colors.backgroundElement }]}>
@@ -1149,6 +1191,14 @@ export default function GroupsScreen() {
         renderItem={({ item }) => {
           const isMine = item.sender_id === currentUser?.id;
           const isVoice = item.message_type === 'voice' && item.media_url;
+          // ── DEBUG ──
+          ['content', 'sender_name', 'sender_username'].forEach((f) => {
+            const v = item[f];
+            if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+              console.warn(`[OBJECT RENDER BUG] group message.${f}`, JSON.stringify(v));
+            }
+          });
+          // ── END DEBUG ──
           return (
             <View style={[styles.chatMsg, isMine ? styles.chatMsgRight : styles.chatMsgLeft]}>
               {!isMine && (
@@ -1783,6 +1833,7 @@ const styles = StyleSheet.create({
   },
   iceBreakerChip: {
     maxWidth: 200,
+    maxHeight: 200,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 16,
@@ -2101,27 +2152,16 @@ const dissStyles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-  dimRow: {
+  ratingRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 2,
+    marginTop: 2,
   },
-  dimBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 12,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.06)',
+  ratingBtn: {
+    padding: 3,
   },
-  dimBtnActive: {
-    backgroundColor: PALETTE.rose,
-  },
-  dimBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#888',
-  },
-  dimBtnTextActive: {
-    color: '#fff',
+  ratingStar: {
+    fontSize: 26,
   },
   submitBtn: {
     marginTop: 8,

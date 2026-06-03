@@ -179,7 +179,6 @@ export default function EventsScreen() {
   const [joiningId, setJoiningId] = useState(null);
   const { user } = useAuth();
   const [suggestions, setSuggestions] = useState([]);
-  const [weekStats, setWeekStats] = useState(null);
   const [weather, setWeather] = useState(null);
 
   useEffect(() => {
@@ -249,43 +248,11 @@ export default function EventsScreen() {
     }
   }, []);
 
-  const fetchWeeklyRecap = useCallback(async () => {
-    try {
-      const monday = new Date();
-      monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-      monday.setHours(0, 0, 0, 0);
-
-      const [convRes, matchRes, eventRes] = await Promise.all([
-        messagesApi.getConversations(),
-        swipesApi.getMatches().catch(() => ({ data: { matches: [] } })),
-        eventsApi.getEvents('joined').catch(() => ({ data: { events: [] } })),
-      ]);
-
-      const convs = convRes.data?.conversations ?? [];
-      const weekMessages = convs.filter(
-        (c) => c.last_message_at && new Date(c.last_message_at) >= monday
-      ).length;
-
-      // Each match = shared interest discovered this week (approximate by total matches)
-      const matches = matchRes.data?.matches ?? [];
-      const weekInterests = matches.length;
-
-      const joinedAll = eventRes.data?.events ?? [];
-      const weekEvents = joinedAll.length;
-
-      setWeekStats({ messages: weekMessages, interests: weekInterests, events: weekEvents });
-    } catch {
-      // Non-critical — set fallback data
-      setWeekStats({ messages: 0, interests: 0, events: 0 });
-    }
-  }, []);
-
   useFocusEffect(
     useCallback(() => {
       fetchEvents(activeFilter, activeCategory);
       fetchSuggestions();
-      fetchWeeklyRecap();
-    }, [fetchEvents, fetchSuggestions, fetchWeeklyRecap, activeFilter, activeCategory, userLocation])
+    }, [fetchEvents, fetchSuggestions, activeFilter, activeCategory, userLocation])
   );
 
   const handleFilterChange = (key) => {
@@ -374,10 +341,10 @@ export default function EventsScreen() {
             </View>
           )}
         </View>
-        <Text style={styles.ceSoirCardTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.ceSoirCardTitle} numberOfLines={2}>{typeof item.title === 'string' ? item.title : ''}</Text>
         <View style={styles.ceSoirCardLocRow}>
           <Ionicons name="location-outline" size={10} color="rgba(255,255,255,0.38)" />
-          <Text style={styles.ceSoirCardLoc} numberOfLines={1}>{item.location_name}</Text>
+          <Text style={styles.ceSoirCardLoc} numberOfLines={1}>{typeof item.location_name === 'string' ? item.location_name : ''}</Text>
         </View>
         <View style={styles.ceSoirCardFooter}>
           <Text style={[styles.ceSoirCardSpots, {
@@ -505,8 +472,8 @@ export default function EventsScreen() {
                 <View style={[styles.suggestIconWrap, { backgroundColor: meta.color + '20' }]}>
                   <Ionicons name={meta.icon} size={22} color={meta.color} />
                 </View>
-                <Text style={[styles.suggestCardTitle, { color: colors.text }]} numberOfLines={2}>{s.title}</Text>
-                <Text style={[styles.suggestCardReason, { color: colors.textSecondary }]} numberOfLines={1}>{s.reason}</Text>
+                <Text style={[styles.suggestCardTitle, { color: colors.text }]} numberOfLines={2}>{typeof s.title === 'string' ? s.title : ''}</Text>
+                <Text style={[styles.suggestCardReason, { color: colors.textSecondary }]} numberOfLines={1}>{typeof s.reason === 'string' ? s.reason : ''}</Text>
                 <View style={[styles.suggestCreateBtn, { backgroundColor: meta.color + '18' }]}>
                   <Text style={[styles.suggestCreateText, { color: meta.color }]}>Créer</Text>
                   <Ionicons name="add" size={13} color={meta.color} />
@@ -526,50 +493,7 @@ export default function EventsScreen() {
   };
 
   // ── Weekly Friendship Recap ──
-  const WeeklyRecapSection = () => {
-    if (!weekStats) return null;
-    const topVibe = getTopVibe(user);
-
-    const RecapStat = ({ value, label, icon, color }) => (
-      <View style={[styles.recapStatItem, { backgroundColor: color + '18' }]}>
-        <View style={[styles.recapStatItemIcon, { backgroundColor: color + '28' }]}>
-          <Ionicons name={icon} size={15} color={color} />
-        </View>
-        <Text style={styles.recapStatItemValue}>{value}</Text>
-        <Text style={styles.recapStatItemLabel}>{label}</Text>
-      </View>
-    );
-
-    return (
-      <View style={styles.recapCard}>
-        <Text style={styles.recapStar1}>✦</Text>
-        <Text style={styles.recapStar2}>✦</Text>
-        <Text style={styles.recapStar3}>✦</Text>
-
-        <View style={styles.recapCardHeader}>
-          <Text style={styles.recapCardEmoji}>📊</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.recapCardTitle}>Bilan de ta semaine</Text>
-            <Text style={styles.recapCardSub}>Ta dose d'amitié hebdomadaire 💕</Text>
-          </View>
-        </View>
-
-        <View style={styles.recapStatRow}>
-          <RecapStat value={weekStats.messages} label={`message${weekStats.messages !== 1 ? 's' : ''}`} icon="chatbubbles-outline" color="#818CF8" />
-          <RecapStat value={weekStats.interests} label={`intérêt${weekStats.interests !== 1 ? 's' : ''} commun`} icon="sparkles-outline" color="#34D399" />
-          <RecapStat value={weekStats.events} label={`event${weekStats.events !== 1 ? 's' : ''} rejoint`} icon="calendar-outline" color="#FB923C" />
-        </View>
-
-        <View style={styles.recapVibeRow}>
-          <Ionicons name="flame" size={13} color="#F59E0B" />
-          <Text style={styles.recapVibeLabel}>Vibe fort : </Text>
-          <Text style={styles.recapVibeValue}>"{topVibe}"</Text>
-        </View>
-      </View>
-    );
-  };
-
-  const CeSoirSection = () => {
+const CeSoirSection = () => {
     const firstUntil = ceSoirEvents[0] ? timeUntil(ceSoirEvents[0].starts_at) : null;
 
     return (
@@ -626,10 +550,10 @@ export default function EventsScreen() {
                       <Text style={{ fontSize: 22 }}>{s.emoji}</Text>
                     </View>
                     <Text style={[styles.ceSoirCardTime, { color: meta.color }]}>Ce soir</Text>
-                    <Text style={styles.ceSoirCardTitle}>{s.title}</Text>
+                    <Text style={styles.ceSoirCardTitle}>{typeof s.title === 'string' ? s.title : ''}</Text>
                     <View style={[styles.ceSoirSuggestChip, { backgroundColor: meta.color + '22', alignSelf: 'flex-start', marginTop: 4 }]}>
                       <Ionicons name={meta.icon} size={10} color={meta.color} />
-                      <Text style={[styles.ceSoirSuggestChipText, { color: meta.color }]}>{meta.label}</Text>
+                      <Text style={[styles.ceSoirSuggestChipText, { color: meta.color }]}>{typeof meta.label === 'string' ? meta.label : ''}</Text>
                     </View>
                     <View style={[styles.ceSoirCardFooter]}>
                       <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Créer →</Text>
@@ -645,6 +569,14 @@ export default function EventsScreen() {
   };
 
   const renderCard = ({ item }) => {
+    // ── DEBUG ──
+    ['location_name', 'title', 'description', 'category'].forEach((f) => {
+      const v = item[f];
+      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+        console.warn(`[OBJECT RENDER BUG] event.${f}`, JSON.stringify(v));
+      }
+    });
+    // ── END DEBUG ──
     const meta = CATEGORY_META[item.category] || CATEGORY_META.autre;
     const isFull = item.member_count >= item.max_members;
     const isJoining = joiningId === item.id;
@@ -672,7 +604,7 @@ export default function EventsScreen() {
             </View>
             <View style={styles.cardChipsRow}>
               <View style={[styles.catChipCard, { backgroundColor: meta.color + '18' }]}>
-                <Text style={[styles.catChipCardTxt, { color: meta.color }]}>{meta.label}</Text>
+                <Text style={[styles.catChipCardTxt, { color: meta.color }]}>{typeof meta.label === 'string' ? meta.label : ''}</Text>
               </View>
               {item.is_joined && (
                 <View style={styles.joinedChipCard}>
@@ -682,14 +614,14 @@ export default function EventsScreen() {
               )}
               {isOutdoor && weather && !weather.ok && (
                 <View style={styles.weatherChipCard}>
-                  <Text style={styles.weatherEmoji}>{weather.emoji}</Text>
-                  <Text style={styles.weatherChipTxt}>{weather.label}</Text>
+                  <Text style={styles.weatherEmoji}>{typeof weather.emoji === 'string' ? weather.emoji : ''}</Text>
+                  <Text style={styles.weatherChipTxt}>{typeof weather.label === 'string' ? weather.label : ''}</Text>
                 </View>
               )}
               {isOutdoor && weather && weather.ok && (
                 <View style={[styles.weatherChipCard, { backgroundColor: '#F0FDF4' }]}>
-                  <Text style={styles.weatherEmoji}>{weather.emoji}</Text>
-                  <Text style={[styles.weatherChipTxt, { color: '#16A34A' }]}>{weather.label}</Text>
+                  <Text style={styles.weatherEmoji}>{typeof weather.emoji === 'string' ? weather.emoji : ''}</Text>
+                  <Text style={[styles.weatherChipTxt, { color: '#16A34A' }]}>{typeof weather.label === 'string' ? weather.label : ''}</Text>
                 </View>
               )}
             </View>
@@ -705,14 +637,14 @@ export default function EventsScreen() {
 
           {/* Title */}
           <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
-            {item.title}
+            {typeof item.title === 'string' ? item.title : ''}
           </Text>
 
           {/* Location */}
           <View style={styles.cardMeta}>
             <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
             <Text style={[styles.cardMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
-              {item.location_name}
+              {typeof item.location_name === 'string' ? item.location_name : ''}
             </Text>
           </View>
 
@@ -776,7 +708,7 @@ export default function EventsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: colors.text }]}>Événements</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Sorties</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Sorties dans les 72h
           </Text>
@@ -888,7 +820,7 @@ export default function EventsScreen() {
         onRefresh={() => { setRefreshing(true); fetchEvents(activeFilter, activeCategory); }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<><WeeklyRecapSection /><PersonalizedSection /><CeSoirSection /></>}
+        ListHeaderComponent={<><PersonalizedSection /> {/*<CeSoirSection />*/}</>}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
@@ -1171,8 +1103,8 @@ const styles = StyleSheet.create({
   // ── Personalized Badge ──
   persoBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: 5,
+    right: 4,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
@@ -1185,27 +1117,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Weekly Recap ──
-  recapCard: {
-    backgroundColor: '#0F0A2A', borderRadius: 22, padding: 18, marginBottom: 8, gap: 14, overflow: 'hidden',
-    shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.38, shadowRadius: 14, elevation: 9,
-  },
-  recapStar1: { position: 'absolute', top: 12, right: 18, fontSize: 11, color: 'rgba(255,255,255,0.28)' },
-  recapStar2: { position: 'absolute', top: 30, right: 44, fontSize: 7, color: 'rgba(255,255,255,0.18)' },
-  recapStar3: { position: 'absolute', top: 22, right: 76, fontSize: 9, color: 'rgba(255,255,255,0.22)' },
-  recapCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  recapCardEmoji: { fontSize: 26 },
-  recapCardTitle: { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
-  recapCardSub: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500', marginTop: 1 },
-  recapStatRow: { flexDirection: 'row', gap: 8 },
-  recapStatItem: { flex: 1, borderRadius: 14, padding: 10, gap: 6, alignItems: 'flex-start' },
-  recapStatItemIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  recapStatItemValue: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-  recapStatItemLabel: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '600', lineHeight: 13 },
-  recapVibeRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
-  },
-  recapVibeLabel: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
-  recapVibeValue: { fontSize: 12, color: '#FCD34D', fontWeight: '700', flex: 1 },
 });

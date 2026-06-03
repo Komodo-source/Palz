@@ -273,6 +273,8 @@ export const groupsApi = {
     }),
   voteActivity: (weeklyGroupId, suggestionIndex) =>
     api.post(`/groups/${weeklyGroupId}/activity-vote`, { suggestion_index: suggestionIndex }),
+  submitInteractionRatings: (weeklyGroupId, ratings) =>
+    api.post('/groups/interaction-ratings', { weekly_group_id: weeklyGroupId, ratings }),
 };
 
 // ── Events ──

@@ -66,9 +66,10 @@ export default function ChatListScreen() {
   const renderConversation = ({ item }) => (
     <TouchableOpacity
       style={[styles.conversationItem, { borderBottomColor: colors.backgroundSelected }]}
-      onPress={() => router.push(`/(tabs)/chat/${item.id}`)}
+      onPress={() => router.push({pathname: `/(tabs)/chat/${item.id}`, params: {other_user_name: item.other_user_name, id_other: item.other_user_id}})}
       activeOpacity={0.7}
     >
+
       <View style={[styles.avatar, { backgroundColor: colors.backgroundSelected }]}>
         <Text style={styles.avatarEmoji}>
           {item.other_user?.profile_image ? '👤' : '🌸'}

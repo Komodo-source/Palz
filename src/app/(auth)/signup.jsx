@@ -159,8 +159,8 @@ export default function SignupScreen() {
       if (profilePhotoUri) {
         setUploadingPhoto(true);
         try {
-          const ext = profilePhotoUri.split('.').pop() || 'jpg';
-          const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+          const ext = (profilePhotoUri.match(/\.([a-zA-Z0-9]+)(?:\?|#|$)/)?.[1] ?? 'jpg').toLowerCase();
+          const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
           console.log('[Signup] Uploading photo with token:', newToken ? `${newToken.substring(0, 20)}...` : 'NULL');
           const { url } = await uploadApi.uploadImage({
             uri: profilePhotoUri,
@@ -366,6 +366,7 @@ export default function SignupScreen() {
               </>
             )}
 
+{/*
             <Text style={styles.label}>Téléphone (optionnel)</Text>
             <TextInput
               style={styles.input}
@@ -375,7 +376,7 @@ export default function SignupScreen() {
               value={phone}
               onChangeText={setPhone}
             />
-
+*/}
             <View style={styles.buttonRow}>
               <TouchableOpacity
                 style={styles.backButton}

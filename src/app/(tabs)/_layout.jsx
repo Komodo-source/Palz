@@ -11,6 +11,7 @@ import { Slot, router, useSegments } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth';
+import { messagesApi } from '@/services/api';
 
 // Always import screen components (they work on all platforms)
 import SwipeScreen from './index'; // kept in code but not shown in tab bar
@@ -28,7 +29,7 @@ const TABS = [
   { key: 'profile', title: 'Profil', icon: 'person-outline' },
 ];
 
-function TabIcon({ name, focused }) {
+function TabIcon({ name, focused, badge }) {
   const icons = {
     events: 'calendar-outline',
     wall: 'images-outline',
@@ -38,11 +39,18 @@ function TabIcon({ name, focused }) {
   };
 
   return (
-    <Ionicons
-      name={icons[name] || 'ellipse'}
-      size={focused ? 26 : 24}
-      color={focused ? '#FF8FA3' : '#B0A098'}
-    />
+    <View style={{ position: 'relative' }}>
+      <Ionicons
+        name={icons[name] || 'ellipse'}
+        size={focused ? 26 : 24}
+        color={focused ? '#FF8FA3' : '#B0A098'}
+      />
+      {badge > 0 && (
+        <View style={styles.tabBadge}>
+          <Text style={styles.tabBadgeText}>{badge > 9 ? '9+' : String(badge)}</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -62,7 +70,7 @@ function TabLabel({ label, focused }) {
   );
 }
 
-function BottomTabBar({ activeIndex, onTabPress, colors }) {
+function BottomTabBar({ activeIndex, onTabPress, colors, unreadCount }) {
   const tabBarHeight = Platform.OS === 'ios' ? 88 : 68;
   const bottomPadding = Platform.OS === 'ios' ? 28 : 10;
 
@@ -81,6 +89,7 @@ function BottomTabBar({ activeIndex, onTabPress, colors }) {
     >
       {TABS.map((tab, index) => {
         const isFocused = index === activeIndex;
+        const badge = tab.key === 'messages' ? unreadCount : 0;
         return (
           <TouchableOpacity
             key={tab.key}
@@ -88,7 +97,7 @@ function BottomTabBar({ activeIndex, onTabPress, colors }) {
             onPress={() => onTabPress(index)}
             activeOpacity={0.7}
           >
-            <TabIcon name={tab.key} focused={isFocused} />
+            <TabIcon name={tab.key} focused={isFocused} badge={badge} />
             <TabLabel label={tab.title} focused={isFocused} />
           </TouchableOpacity>
         );
@@ -113,6 +122,7 @@ export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
   const segments = useSegments();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Redirect to login if not authenticated (and not still loading)
   useEffect(() => {
@@ -121,10 +131,25 @@ export default function TabsLayout() {
     }
   }, [isLoading, isAuthenticated]);
 
+  // Poll unread conversations count for the Messages tab badge
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const check = async () => {
+      try {
+        const res = await messagesApi.getConversations();
+        const convs = res.data?.conversations ?? [];
+        setUnreadCount(convs.filter((c) => c.has_unread).length);
+      } catch {}
+    };
+    check();
+    const timer = setInterval(check, 30000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated]);
+
   if (isLoading) return null;
 
   // Check if we're on a sub-route (chat, profil) — render as stack (no tabs, no pager)
-  const isSubRoute = segments.includes('chat') || segments.includes('profil') || segments.includes('user') || segments.includes('event');
+  const isSubRoute = segments.includes('chat') || segments.includes('profil') || segments.includes('user') || segments.includes('event') || segments.includes('settings');
 
   const getActiveIndexFromPath = useCallback(() => {
     const segment = segments[segments.length - 1];
@@ -173,6 +198,7 @@ export default function TabsLayout() {
         activeIndex={activeIndex}
         onTabPress={handleTabPress}
         colors={colors}
+        unreadCount={unreadCount}
       />
     </View>
   );
@@ -194,5 +220,25 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 11,
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  tabBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+    lineHeight: 12,
   },
 });

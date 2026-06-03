@@ -491,11 +491,11 @@ export default function EventDetailScreen() {
           </View>
           <View style={styles.heroText}>
             <View style={[styles.heroCategoryChip, { backgroundColor: meta.color + '20' }]}>
-              <Text style={[styles.heroCategoryLabel, { color: meta.color }]}>{meta.label}</Text>
+              <Text style={[styles.heroCategoryLabel, { color: meta.color }]}>{typeof meta.label === 'string' ? meta.label : ''}</Text>
             </View>
-            <Text style={[styles.heroTitle, { color: colors.text }]}>{event.title}</Text>
+            <Text style={[styles.heroTitle, { color: colors.text }]}>{typeof event.title === 'string' ? event.title : ''}</Text>
             <Text style={[styles.heroCreator, { color: colors.textSecondary }]}>
-              par {event.creator_name || 'Anonyme'}
+              par {typeof event.creator_name === 'string' ? event.creator_name : 'Anonyme'}
             </Text>
           </View>
         </View>

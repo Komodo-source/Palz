@@ -24,6 +24,11 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import ConfettiCannon from '@/components/ConfettiCannon';
 
+import { Human } from '@vladmandic/human';
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-react-native';
+import { fetch, decodeJpeg } from '@tensorflow/tfjs-react-native';
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_SIZE = (SCREEN_WIDTH - 64) / 3;
@@ -385,6 +390,12 @@ export default function OnboardingScreen() {
   const [videoVerified, setVideoVerified] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
 
+  // ── Photo verification (V2) ──
+  const [verifyPhoto1, setVerifyPhoto1] = useState(null);
+  const [verifyPhoto2, setVerifyPhoto2] = useState(null);
+  const [verifyStatus, setVerifyStatus] = useState('idle'); // 'idle' | 'analyzing' | 'passed' | 'failed'
+  const [verifyResult, setVerifyResult] = useState(null);
+
 
   // Compatibility answers
   const [compatAnswers, setCompatAnswers] = useState(getDefaultAnswers());
@@ -394,7 +405,73 @@ export default function OnboardingScreen() {
   const progressAnim = useRef(new RNAnimated.Value(0)).current;
   const resultOpacity = useRef(new RNAnimated.Value(0)).current;
 
+  //Human AI recognition
+   const humanConfig = {
+        // Required models for your use case
+        modelBasePath: 'https://vladmandic.github.io/human/models/',
+        face: {
+          enabled: true,
+          detector: { return: true },
+          mesh: { enabled: false }, // Turn off unused models for performance
+          iris: { enabled: false },
+          description: { enabled: true }, // Crucial for Face Matching (computes embeddings)
+          emotion: { enabled: false },
+        },
+        body: { enabled: false },
+        hand: { enabled: false },
+        object: { enabled: false },
+        backend: 'rn-webgl'
+      };
 
+      const human = new Human(humanConfig);
+
+
+
+  const pickVerifyPhoto = async (slot) => {
+    Alert.alert('Source photo', 'Choisir la source', [
+      {
+        text: 'Appareil photo', onPress: async () => {
+          const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+          if (!granted) { Alert.alert('Permission requise', "Accorde l'accès à la caméra."); return; }
+          const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false });
+          if (!res.canceled && res.assets?.[0]) {
+            if (slot === 1) setVerifyPhoto1(res.assets[0].uri);
+            else setVerifyPhoto2(res.assets[0].uri);
+            setVerifyStatus('idle');
+            setVerifyResult(null);
+          }
+        },
+      },
+      {
+        text: 'Galerie', onPress: async () => {
+          const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!granted) return;
+          const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: false });
+          if (!res.canceled && res.assets?.[0]) {
+            if (slot === 1) setVerifyPhoto1(res.assets[0].uri);
+            else setVerifyPhoto2(res.assets[0].uri);
+            setVerifyStatus('idle');
+            setVerifyResult(null);
+          }
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const handleAnalyze = async () => {
+    if (!verifyPhoto1 || !verifyPhoto2) return;
+    setVerifyStatus('analyzing');
+    try {
+      const result = await compareFacesAndGender(verifyPhoto1, verifyPhoto2);
+      setVerifyResult(result);
+      setVerifyStatus(result.pass ? 'passed' : 'failed');
+    } catch (err) {
+      console.error('Verify analysis error:', err);
+      setVerifyResult({ pass: false, reason: 'Erreur lors de l\'analyse. Réessaie !' });
+      setVerifyStatus('failed');
+    }
+  };
 
   const recordVideo = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -425,6 +502,177 @@ export default function OnboardingScreen() {
       }
     }
   };
+
+  async function processImage(imageUri) {
+    const response = await fetch(imageUri, {}, { isBinary: true });
+    const imageData = await response.arrayBuffer();
+    const tensor = decodeJpeg(new Uint8Array(imageData));
+    const result = await human.detect(tensor);
+    tf.dispose(tensor);
+    return result;
+  }
+
+  async function compareFacesAndGender(photo1Uri, photo2Uri) {
+    await tf.ready();
+    await human.load();
+    const result1 = await processImage(photo1Uri);
+    const result2 = await processImage(photo2Uri);
+
+    if (result1.face.length === 0 || result2.face.length === 0) {
+      return { pass: false, reason: 'Aucun visage détecté dans une des photos. Place-toi dans la lumière et réessaie.' };
+    }
+
+    const face1 = result1.face[0];
+    const face2 = result2.face[0];
+
+    if (face1.gender !== 'female' || face2.gender !== 'female') {
+      return { pass: false, reason: 'Le système n\'a pas pu confirmer ton identité. Assure-toi d\'être bien éclairée et réessaie.' };
+    }
+
+    if (face1.embedding && face2.embedding) {
+      const similarity = human.match.similarity(face1.embedding, face2.embedding);
+      if (similarity < 0.55) {
+        return { pass: false, reason: 'Les deux photos ne semblent pas être la même personne. Utilise tes propres photos !' };
+      }
+    }
+
+    return { pass: true };
+  }
+
+
+  function CheckIfWomenV2() {
+    const bothReady = verifyPhoto1 && verifyPhoto2;
+
+    return (
+      <View style={styles.stepContainer}>
+        <View style={styles.stepHeader}>
+          <View style={[styles.iconCircle, { backgroundColor: '#F0FDF4' }]}>
+            <Ionicons name="shield-checkmark" size={32} color="#10B981" />
+          </View>
+          <Text style={styles.stepTitle}>Vérification photo</Text>
+          <Text style={styles.stepSubtitle}>
+            Analysée localement sur ton appareil — aucune photo envoyée
+          </Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+          {/* Instructions */}
+          <View style={vStyles.instructionCard}>
+            <View style={vStyles.instructionRow}>
+              <View style={vStyles.badge}><Text style={vStyles.badgeText}>1</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={vStyles.instructionMain}>Photo de face</Text>
+                <Text style={vStyles.instructionSub}>Montre <Text style={{ fontWeight: '800' }}>3 doigts</Text> devant ton visage</Text>
+              </View>
+            </View>
+            <View style={vStyles.instructionRow}>
+              <View style={vStyles.badge}><Text style={vStyles.badgeText}>2</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={vStyles.instructionMain}>Photo de l'autre côté</Text>
+                <Text style={vStyles.instructionSub}>Profil ou angle différent, sans geste</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Photo slots */}
+          <View style={vStyles.photoRow}>
+            <TouchableOpacity
+              style={[vStyles.photoSlot, verifyPhoto1 && vStyles.photoSlotFilled]}
+              onPress={() => pickVerifyPhoto(1)}
+              activeOpacity={0.8}
+            >
+              {verifyPhoto1 ? (
+                <>
+                  <Image source={{ uri: verifyPhoto1 }} style={vStyles.photoImg} />
+                  <View style={vStyles.checkOverlay}>
+                    <Ionicons name="checkmark-circle" size={26} color="#10B981" />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="hand-left-outline" size={32} color={PALETTE.roseLight} />
+                  <Text style={vStyles.photoSlotLabel}>Photo 1</Text>
+                  <Text style={vStyles.photoSlotHint}>3 doigts · face</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[vStyles.photoSlot, verifyPhoto2 && vStyles.photoSlotFilled]}
+              onPress={() => pickVerifyPhoto(2)}
+              activeOpacity={0.8}
+            >
+              {verifyPhoto2 ? (
+                <>
+                  <Image source={{ uri: verifyPhoto2 }} style={vStyles.photoImg} />
+                  <View style={vStyles.checkOverlay}>
+                    <Ionicons name="checkmark-circle" size={26} color="#10B981" />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="person-outline" size={32} color={PALETTE.roseLight} />
+                  <Text style={vStyles.photoSlotLabel}>Photo 2</Text>
+                  <Text style={vStyles.photoSlotHint}>profil normal</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Analyze button */}
+          {bothReady && verifyStatus === 'idle' && (
+            <TouchableOpacity style={vStyles.analyzeBtn} onPress={handleAnalyze} activeOpacity={0.85}>
+              <Ionicons name="scan-outline" size={20} color="#fff" />
+              <Text style={vStyles.analyzeBtnText}>Analyser les photos</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Status */}
+          {verifyStatus === 'analyzing' && (
+            <View style={vStyles.statusCard}>
+              <ActivityIndicator size="large" color={PALETTE.rose} />
+              <Text style={vStyles.statusText}>Analyse en cours…</Text>
+              <Text style={vStyles.statusSub}>L'IA tourne localement, ça peut prendre quelques secondes</Text>
+            </View>
+          )}
+
+          {verifyStatus === 'passed' && (
+            <View style={[vStyles.statusCard, { backgroundColor: '#F0FDF4', borderColor: '#10B981' }]}>
+              <Ionicons name="checkmark-circle" size={52} color="#10B981" />
+              <Text style={[vStyles.statusText, { color: '#10B981' }]}>Identité confirmée ✨</Text>
+              <Text style={vStyles.statusSub}>Tu peux continuer ton inscription !</Text>
+            </View>
+          )}
+
+          {verifyStatus === 'failed' && (
+            <View style={[vStyles.statusCard, { backgroundColor: PALETTE.rosePale, borderColor: PALETTE.error }]}>
+              <Ionicons name="alert-circle" size={52} color={PALETTE.error} />
+              <Text style={[vStyles.statusText, { color: PALETTE.error }]}>Vérification échouée</Text>
+              <Text style={vStyles.statusSub}>{verifyResult?.reason || 'Réessaie avec de meilleures photos.'}</Text>
+              <TouchableOpacity onPress={handleAnalyze} style={{ marginTop: 10 }}>
+                <Text style={{ color: PALETTE.rose, fontWeight: '700', fontSize: 15 }}>↩ Réessayer</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Privacy */}
+          <View style={vStyles.privacyCard}>
+            <Ionicons name="lock-closed-outline" size={16} color={PALETTE.textLight} />
+            <Text style={vStyles.privacyText}>
+              Les photos sont traitées <Text style={{ fontWeight: '700' }}>uniquement sur ton appareil</Text> et jamais envoyées à nos serveurs. Elles sont supprimées immédiatement après analyse.{' '}
+              <Text style={{ color: PALETTE.rose }}>En savoir plus →</Text>
+            </Text>
+          </View>
+
+          <Text style={vStyles.contact}>
+            Un problème ou une question ?{'\n'}
+            <Text style={{ color: PALETTE.rose, fontWeight: '600' }}>support@palz.fr</Text>
+            {'  '}— nous répondons rapidement 🌸
+          </Text>
+        </ScrollView>
+      </View>
+    );
+  }
 
 
   function CheckIfWomen() {
@@ -781,8 +1029,8 @@ export default function OnboardingScreen() {
     }
     if (step === 10) {
       return {
-        canProceed: videoVerified,
-        component: <CheckIfWomen />,
+        canProceed: verifyStatus === 'passed',
+        component: <CheckIfWomenV2 />,
       };
     }
     if (compatIdx >= 0 && compatIdx < COMPATIBILITY_QUESTIONS.length) {
@@ -1325,6 +1573,161 @@ function CompatibilityCard({ question, value, onValueChange }) {
     </View>
   );
 }
+
+// ── Photo Verification styles ──
+const vStyles = StyleSheet.create({
+  instructionCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 20,
+    padding: 18,
+    gap: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    shadowColor: PALETTE.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  instructionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  badge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: PALETTE.rose,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: PALETTE.white,
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  instructionMain: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+  },
+  instructionSub: {
+    fontSize: 13,
+    color: PALETTE.textMid,
+    marginTop: 2,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  photoSlot: {
+    flex: 1,
+    aspectRatio: 0.8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: PALETTE.roseLight,
+    backgroundColor: PALETTE.rosePale,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    overflow: 'hidden',
+  },
+  photoSlotFilled: {
+    borderStyle: 'solid',
+    borderColor: '#10B981',
+    backgroundColor: '#000',
+  },
+  photoImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  checkOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#fff',
+    borderRadius: 13,
+  },
+  photoSlotLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+  },
+  photoSlotHint: {
+    fontSize: 11,
+    color: PALETTE.textLight,
+    textAlign: 'center',
+  },
+  analyzeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: PALETTE.rose,
+    borderRadius: 20,
+    paddingVertical: 16,
+    marginBottom: 16,
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  analyzeBtnText: {
+    color: PALETTE.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statusCard: {
+    alignItems: 'center',
+    gap: 10,
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
+    backgroundColor: PALETTE.white,
+    marginBottom: 16,
+  },
+  statusText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+    textAlign: 'center',
+  },
+  statusSub: {
+    fontSize: 13,
+    color: PALETTE.textMid,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  privacyCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: PALETTE.lavenderPale,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+  privacyText: {
+    flex: 1,
+    fontSize: 12,
+    color: PALETTE.textMid,
+    lineHeight: 18,
+  },
+  contact: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: PALETTE.textLight,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+});
 
 // ── Styles ──
 const styles = StyleSheet.create({

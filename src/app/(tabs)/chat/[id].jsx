@@ -157,7 +157,7 @@ const vStyles = StyleSheet.create({
 });
 
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams();
+  const { id} = useLocalSearchParams();
   const conversationId = Array.isArray(id) ? id[0] ?? '' : id ?? '';
   const { user: currentUser } = useAuth();
   const colorScheme = useColorScheme();
@@ -180,6 +180,7 @@ export default function ChatScreen() {
   const recorderState = useAudioRecorderState(recorder);
   const [isRecording, setIsRecording] = useState(false);
   const recordTimerRef = useRef(null);
+  const { other_user_name, id_other } = useLocalSearchParams();
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId) return;
@@ -487,6 +488,7 @@ export default function ChatScreen() {
     }
   };
 
+
   const formatTime = (dateStr) => {
     const date = new Date(dateStr);
     return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -722,67 +724,51 @@ export default function ChatScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerLeft: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              activeOpacity={0.7}
-              style={{ paddingRight: 8, paddingLeft: 4 }}
-            >
-              <Ionicons name="chevron-back" size={26} color={colors.text} />
-            </TouchableOpacity>
-          ),
-          headerTitle: () => (
-            <TouchableOpacity
-              style={styles.headerTitle}
-              onPress={() => conversation?.other_user_id && router.push(`/(tabs)/user/${conversation.other_user_id}`)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.headerAvatarWrap}>
-                {otherUserImage ? (
-                  <Image source={{ uri: otherUserImage }} style={styles.headerAvatarImg} />
-                ) : (
-                  <View style={[styles.headerAvatarFallback, { backgroundColor: PALETTE.rosePale }]}>
-                    <Ionicons name="person" size={18} color={PALETTE.rose} />
-                  </View>
-                )}
-                <View style={styles.onlineDot} />
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ── WhatsApp-style banner ── */}
+      <View style={[styles.banner, { backgroundColor: colors.background, borderBottomColor: isDark ? '#3D332E' : PALETTE.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.bannerBack} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bannerCenter}
+          onPress={() => conversation?.other_user_id && router.push(`/(tabs)/user/${conversation.other_user_id}`)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.bannerAvatarWrap}>
+            {otherUserImage ? (
+              <Image source={{ uri: otherUserImage }} style={styles.bannerAvatarImg} />
+            ) : (
+              <View style={[styles.bannerAvatarFallback, { backgroundColor: PALETTE.rosePale }]}>
+                <Ionicons name="person" size={18} color={PALETTE.rose} />
               </View>
-              <View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
-                    {otherUserName}
-                  </Text>
-                  {(conversation?.streak ?? 0) >= 2 && (
-                    <View style={styles.streakBadge}>
-                      <Text style={styles.streakBadgeText}>🔥 {conversation.streak}</Text>
-                    </View>
-                  )}
+            )}
+          </View>
+          <View style={styles.bannerInfo}>
+            <View style={styles.bannerNameRow}>
+              <Text style={[styles.bannerName, { color: colors.text }]} numberOfLines={1}>
+                {otherUserName}
+              </Text>
+              {(conversation?.streak ?? 0) >= 1 && (
+                <View style={styles.streakBadge}>
+                  <Text style={styles.streakBadgeText}>🔥 {conversation.streak}</Text>
                 </View>
-                <Text style={[styles.headerSub, { color: PALETTE.rose }]}>En ligne</Text>
-              </View>
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={reportUser}
-              activeOpacity={0.7}
-              style={{ paddingLeft: 8, paddingRight: 4 }}
-            >
-              <Ionicons name="flag-outline" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-          ),
-          headerStyle: { backgroundColor: colors.background },
-          headerShadowVisible: false,
-        }}
-      />
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={reportUser} activeOpacity={0.7} style={styles.bannerReport}>
+          <Ionicons name="flag-outline" size={22} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
         <FlatList
           ref={flatListRef}
@@ -914,22 +900,24 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Header
-  headerTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerAvatarWrap: { width: 38, height: 38, position: 'relative' },
-  headerAvatarImg: { width: 38, height: 38, borderRadius: 19 },
-  headerAvatarFallback: {
-    width: 38, height: 38, borderRadius: 19,
-    alignItems: 'center', justifyContent: 'center',
+  // WhatsApp-style banner
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 54 : 14,
+    paddingBottom: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  onlineDot: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 10, height: 10, borderRadius: 5,
-    backgroundColor: '#52C41A',
-    borderWidth: 2, borderColor: '#fff',
-  },
-  headerName: { fontSize: 16, fontWeight: '700' },
-  headerSub: { fontSize: 11, fontWeight: '600' },
+  bannerBack: { padding: 6 },
+  bannerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
+  bannerAvatarWrap: { width: 40, height: 40, position: 'relative' },
+  bannerAvatarImg: { width: 40, height: 40, borderRadius: 20 },
+  bannerAvatarFallback: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  bannerInfo: { flex: 1 },
+  bannerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bannerName: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  bannerReport: { padding: 8 },
   streakBadge: {
     backgroundColor: '#FFF3CD',
     paddingHorizontal: 7,

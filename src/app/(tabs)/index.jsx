@@ -130,8 +130,7 @@ function AnimatedCardWrapper({ stackIndex, children }) {
   }, [stackIndex]);
 
   const animatedWrapperStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    marginTop: offsetY.value,
+    transform: [{ scale: scale.value }, { translateY: offsetY.value }],
   }));
 
   return (
@@ -145,6 +144,14 @@ function AnimatedCardWrapper({ stackIndex, children }) {
 
 // ── Card component with gesture handling ──
 function SwipeCard({ user, onSwipe, isTop }) {
+  // ── DEBUG: log object fields before render ──
+  ['location', 'home_location', 'bio', 'work', 'situation', 'interests', 'labels', 'common_interest', 'full_name', 'user_name'].forEach((f) => {
+    const v = user?.[f];
+    if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+      console.warn(`[OBJECT RENDER BUG] swipe user.${f}`, JSON.stringify(v));
+    }
+  });
+  // ── END DEBUG ──
   console.log("showed user: ", user);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -268,7 +275,7 @@ function SwipeCard({ user, onSwipe, isTop }) {
             {/* Name + age */}
             <View style={styles.nameRow}>
               <Text style={[styles.infoName, { color: colors.text }]} numberOfLines={1}>
-                {user.full_name || user.user_name}
+                {String(user.full_name || user.user_name || '')}
               </Text>
               <Text style={[styles.infoAge, { color: colors.textSecondary }]}>
                 , {user.date_of_birth ? calculateAge(user.date_of_birth) : '?'}
@@ -276,7 +283,7 @@ function SwipeCard({ user, onSwipe, isTop }) {
             </View>
 
             {/* Location */}
-            {user.location ? (
+            {typeof user.location === 'string' && user.location ? (
               <View style={styles.infoRow}>
                 <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
                 <Text style={[styles.infoLocText, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -298,7 +305,7 @@ function SwipeCard({ user, onSwipe, isTop }) {
                   return (
                     <View key={i} style={[styles.tag, { backgroundColor: ts.bg }]}>
                       <Ionicons name={tag.icon} size={11} color={ts.icon} />
-                      <Text style={[styles.tagText, { color: ts.text }]}>{tag.label}</Text>
+                      <Text style={[styles.tagText, { color: ts.text }]}>{String(tag.label ?? '')}</Text>
                     </View>
                   );
                 })}

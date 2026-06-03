@@ -8,6 +8,8 @@ import {
   Alert,
   Image,
   Dimensions,
+  Modal,
+  Share,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,12 +17,13 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/contexts/auth';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getStorageUrl, swipesApi, usersApi } from '@/services/api';
+import { getStorageUrl, swipesApi, usersApi, messagesApi, eventsApi } from '@/services/api';
+import storage from '@/services/storage';
 import { useSnackbar } from '@/contexts/snackbar';
 import { parseDbJson } from '@/utils/parsers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PHOTO_W = (SCREEN_WIDTH - 48 - 8) / 3;
+const PHOTO_W = (SCREEN_WIDTH - 64 - 8) / 2; // 2-column grid = 4 large photos
 
 function useCountUp(target, duration = 900) {
   const [display, setDisplay] = useState(0);
@@ -76,6 +79,21 @@ function InfoRow({ icon, label, value, color }) {
   );
 }
 
+const VIBE_MAP = {
+  'Homebody': 'soirée cocooning 🏠', 'Bookworm': 'lecture & café ☕',
+  'Sportive': 'aventures outdoor 🏃', 'Voyageuse': 'explorations urbaines 🗺️',
+  'Spontanée': 'sorties impromptues ✨', 'Foodie': 'foodie dates 🍝',
+  'Soirées': 'late-night talks 🌙', 'Brunchs': 'brunch & bonne humeur 🥞',
+  'Apéros': 'apéro entre copines 🥂', 'Cinéma': 'movie nights 🎬',
+};
+function getTopVibe(user) {
+  if (!user) return 'moments de partage 💕';
+  const labels = user.labels && typeof user.labels === 'object' ? user.labels : {};
+  const all = [...(Array.isArray(labels.vibe) ? labels.vibe : []), ...(Array.isArray(labels.dispo) ? labels.dispo : [])];
+  for (const v of all) if (VIBE_MAP[v]) return VIBE_MAP[v];
+  return 'moments de partage 💕';
+}
+
 export default function ProfileScreen() {
   const { user } = useAuth();
   const { logout } =useAuth();
@@ -86,6 +104,9 @@ export default function ProfileScreen() {
 
   const [numberPhoto, SetnumberPhoto] = useState(null);
   const [numberRelation, setNumberRelation] = useState(null);
+  const [weekStats, setWeekStats] = useState(null);
+  const [recapModal, setRecapModal] = useState(false);
+  const hasCheckedRecap = useRef(false);
   const animRelation = useCountUp(numberRelation);
   const animPhoto = useCountUp(numberPhoto);
 
@@ -93,10 +114,44 @@ export default function ProfileScreen() {
     if (!user) return;
     parseNumberPhotos();
     parseNumberRelation();
-    // swipesApi.getMatches().then((res) => {
-    //   setMatchCount(res.data?.matches?.length ?? 0);
+  }, []);
 
-    // }).catch(() => {});
+  useEffect(() => {
+    if (hasCheckedRecap.current) return;
+    hasCheckedRecap.current = true;
+    const today = new Date();
+    if (today.getDay() !== 0) return; // dimanche uniquement
+    const checkRecap = async () => {
+      try {
+        const lastShown = await storage.getItem('weekly_recap_shown');
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        if (lastShown && new Date(lastShown) >= weekStart) return;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - 6);
+        monday.setHours(0, 0, 0, 0);
+        const [convRes, matchRes, eventRes] = await Promise.all([
+          messagesApi.getConversations().catch(() => ({ data: { conversations: [] } })),
+          swipesApi.getMatches().catch(() => ({ data: { matches: [] } })),
+          eventsApi.getEvents('joined').catch(() => ({ data: { events: [] } })),
+        ]);
+        const weekMessages = (convRes.data?.conversations ?? []).filter(
+          (c) => c.last_message_at && new Date(c.last_message_at) >= monday
+        ).length;
+        setWeekStats({
+          messages: weekMessages,
+          interests: (matchRes.data?.matches ?? []).length,
+          events: (eventRes.data?.events ?? []).length,
+        });
+        setRecapModal(true);
+        await storage.setItem('weekly_recap_shown', today.toISOString());
+      } catch {
+        setWeekStats({ messages: 0, interests: 0, events: 0 });
+        setRecapModal(true);
+      }
+    };
+    checkRecap();
   }, []);
 
   if (!user) return <Text style={{ textAlign: 'center', marginTop: 60 }}>Chargement...</Text>;
@@ -153,7 +208,17 @@ const formatDate = (dob) => {
 
   const situationLabel = user?.situation ? (SITUATION_LABELS[user.situation] || user.situation) : null;
 
+  // ── DEBUG ──
+  ['bio', 'work', 'location', 'home_location', 'labels', 'interests', 'situation', 'email'].forEach((f) => {
+    const v = user?.[f];
+    if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+      console.warn(`[OBJECT RENDER BUG] profile user.${f}`, JSON.stringify(v));
+    }
+  });
+  // ── END DEBUG ──
+
   return (
+    <>
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.scrollContent}
@@ -230,7 +295,7 @@ const formatDate = (dob) => {
             <Text style={[styles.cardTitle, { color: colors.text }]}>Mes photos</Text>
           </View>
           <View style={styles.photoGrid}>
-            {photos.map((p, i) => (
+            {photos.slice(0, 6).map((p, i) => (
               <Image
                 key={i}
                 source={{ uri: getStorageUrl(p) }}
@@ -265,7 +330,6 @@ const formatDate = (dob) => {
         <InfoRow icon="briefcase-outline" label="Métier" value={user?.work} color="#52C41A" />
         <InfoRow icon="heart-outline" label="Situation" value={situationLabel} color="#FF7E7E" />
         <InfoRow icon="location-outline" label="Localisation" value={user?.location || user?.home_location} color="#FFA940" />
-        <InfoRow icon="call-outline" label="Téléphone" value={user?.phone} color="#13C2C2" />
         <InfoRow
           icon="star-outline"
           label="Signe astrologique"
@@ -341,11 +405,11 @@ const formatDate = (dob) => {
       <View>
         <TouchableOpacity
           style={styles.logoutButton}
-          onPress={() => router.push('/(tabs)/')}
+          onPress={() => router.push('/(tabs)/settings/list_settings')}
           activeOpacity={0.7}
         >
-          <Ionicons name="log-out-outline" size={20} color={PALETTE.error} />
-          <Text style={styles.logoutText}>Paramètre</Text>
+          <Ionicons name="cog-outline" size={20} color={PALETTE.error} />
+          <Text style={styles.logoutText}>Paramètre de l'App</Text>
         </TouchableOpacity>
       </View>
 
@@ -369,6 +433,65 @@ const formatDate = (dob) => {
         Palz v1.0.0 · Fait avec amour
       </Text>
     </ScrollView>
+
+    {/* ── Bilan de la semaine (dimanche uniquement) ── */}
+    <Modal visible={recapModal} transparent animationType="slide" onRequestClose={() => setRecapModal(false)}>
+      <View style={styles.recapOverlay}>
+        <View style={styles.recapBox}>
+          <Text style={styles.recapStar1}>✦</Text>
+          <Text style={styles.recapStar2}>✦</Text>
+          <Text style={styles.recapStar3}>✦</Text>
+
+          <View style={styles.recapIcon}>
+            <Text style={styles.recapIconEmoji}>📊</Text>
+          </View>
+          <Text style={styles.recapTitle}>Bilan de ta semaine ✨</Text>
+          <Text style={styles.recapSub}>Voici ton recap d'amitié cette semaine sur Palz !</Text>
+
+          <View style={styles.recapStats}>
+            {[
+              { value: weekStats?.messages ?? 0, label: 'conversations actives', icon: 'chatbubbles-outline', color: '#818CF8', bg: 'rgba(99,102,241,0.12)', emoji: '💬' },
+              { value: weekStats?.interests ?? 0, label: 'connexions avec intérêts communs', icon: 'sparkles-outline', color: '#34D399', bg: 'rgba(52,211,153,0.12)', emoji: '🎯' },
+              { value: weekStats?.events ?? 0, label: 'événement rejoint', icon: 'calendar-outline', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', emoji: '🎉' },
+            ].map(({ value, label, icon, color, bg, emoji }) => (
+              <View key={label} style={[styles.recapStatRow, { backgroundColor: bg }]}>
+                <View style={[styles.recapStatIcon, { backgroundColor: color + '28' }]}>
+                  <Ionicons name={icon} size={18} color={color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.recapStatValue}>{value}</Text>
+                  <Text style={styles.recapStatLabel}>{label}</Text>
+                </View>
+                <Text style={styles.recapStatEmoji}>{emoji}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.recapVibeRow}>
+            <Ionicons name="flame" size={14} color="#F59E0B" />
+            <Text style={styles.recapVibeLabel}>Ton vibe fort : </Text>
+            <Text style={styles.recapVibeValue}>"{getTopVibe(user)}"</Text>
+          </View>
+
+          <Text style={styles.recapFooter}>Rendez-vous dimanche prochain ! 🌸</Text>
+
+          <View style={styles.recapBtnRow}>
+            <TouchableOpacity
+              style={styles.recapShareBtn}
+              onPress={() => Share.share({ message: `Mon bilan Palz cette semaine ✨\n💬 ${weekStats?.messages ?? 0} conversations actives\n🎯 ${weekStats?.interests ?? 0} connexions\n🎉 ${weekStats?.events ?? 0} événements rejoints\nVibe fort : "${getTopVibe(user)}" 🔥\n#Palz` })}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="share-outline" size={18} color="#818CF8" />
+              <Text style={styles.recapShareBtnText}>Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.recapCloseBtn} onPress={() => setRecapModal(false)} activeOpacity={0.8}>
+              <Text style={styles.recapCloseBtnText}>Super ! Merci 💕</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -518,8 +641,8 @@ const styles = StyleSheet.create({
   },
   photoThumb: {
     width: PHOTO_W,
-    height: PHOTO_W * 1.25,
-    borderRadius: 12,
+    height: PHOTO_W * 1.2,
+    borderRadius: 14,
     backgroundColor: PALETTE.rosePale,
   },
   bioText: {
@@ -643,4 +766,30 @@ const styles = StyleSheet.create({
     marginTop: 24,
     fontSize: 13,
   },
+
+  // ── Bilan de la semaine ──
+  recapOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  recapBox: { width: '100%', borderRadius: 28, padding: 24, alignItems: 'center', gap: 14, overflow: 'hidden', backgroundColor: '#0F0A2A', shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 16 },
+  recapStar1: { position: 'absolute', top: 12, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.25)' },
+  recapStar2: { position: 'absolute', top: 28, right: 50, fontSize: 7, color: 'rgba(255,255,255,0.15)' },
+  recapStar3: { position: 'absolute', top: 20, right: 84, fontSize: 9, color: 'rgba(255,255,255,0.20)' },
+  recapIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(139,92,246,0.18)', alignItems: 'center', justifyContent: 'center' },
+  recapIconEmoji: { fontSize: 28 },
+  recapTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3, color: '#fff' },
+  recapSub: { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  recapStats: { width: '100%', gap: 8, marginTop: 2 },
+  recapStatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16 },
+  recapStatIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  recapStatValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5, color: '#fff' },
+  recapStatLabel: { fontSize: 11, fontWeight: '500', marginTop: 1, color: 'rgba(255,255,255,0.5)' },
+  recapStatEmoji: { fontSize: 20 },
+  recapVibeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, width: '100%', backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  recapVibeLabel: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  recapVibeValue: { fontSize: 12, color: '#FCD34D', fontWeight: '700', flex: 1 },
+  recapFooter: { fontSize: 12, fontWeight: '500', textAlign: 'center', color: 'rgba(255,255,255,0.4)' },
+  recapBtnRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  recapShareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(129,140,248,0.4)', backgroundColor: 'rgba(129,140,248,0.08)' },
+  recapShareBtnText: { color: '#818CF8', fontWeight: '700', fontSize: 15 },
+  recapCloseBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 18, backgroundColor: '#FF8FA3', shadowColor: '#FF8FA3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
+  recapCloseBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

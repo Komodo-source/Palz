@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { usersApi, swipesApi, wallApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -41,45 +40,20 @@ const ZODIAC_ICONS = {
   'Capricorne': 'mountain-outline', 'Verseau': 'rainy-outline', 'Poissons': 'fish-outline',
 };
 
-function parseInterests(user) {
-  const sports = Array.isArray(user.sports) ? user.sports : (parseDbJson(user.sports) || []);
-  const hobbies = Array.isArray(user.hobbies) ? user.hobbies : (parseDbJson(user.hobbies) || []);
-  return { sports, hobbies };
+function toStringArray(raw) {
+  const arr = Array.isArray(raw) ? raw : (Array.isArray(parseDbJson(raw)) ? parseDbJson(raw) : []);
+  return arr.filter((x) => x != null && typeof x !== 'object');
 }
 
-function VoiceFunFactPlayer({ uri, colors }) {
-  const player = useAudioPlayer(uri);
-  const status = useAudioPlayerStatus(player);
-
-  const handlePress = () => {
-    if (status.playing) {
-      player.pause();
-    } else {
-      player.seekTo(0);
-      player.play();
-    }
+function parseInterests(user) {
+  return {
+    sports: toStringArray(user.sports),
+    hobbies: toStringArray(user.hobbies),
   };
-
-  return (
-    <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
-      <View style={styles.sectionHeader}>
-        <Ionicons name="mic-outline" size={16} color={PALETTE.rose} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Ice Breaker</Text>
-      </View>
-      <TouchableOpacity style={styles.voiceRow} onPress={handlePress} activeOpacity={0.7}>
-        <View style={[styles.voicePlayBtn, { backgroundColor: PALETTE.rose }]}>
-          <Ionicons name={status.playing ? 'pause' : 'play'} size={18} color="#fff" />
-        </View>
-        <Text style={[styles.voiceLabel, { color: colors.textSecondary }]}>
-          {status.playing ? 'En cours de lecture…' : 'Écouter son anecdote vocale'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
 }
 
 function cityOnly(loc) {
-  if (!loc) return null;
+  if (!loc || typeof loc !== 'string') return null;
   return loc.split(',')[0].trim();
 }
 
@@ -189,12 +163,29 @@ const lifestyleBadges = [
 ];
 
   const reliabilityStars = Math.min(3, Math.max(1, user.reliability_score || 1));
-  const rawLabels = user.labels && typeof user.labels === 'string' ? JSON.parse(user.labels) : (user.labels || {});
-  const vibeLabels = Array.isArray(rawLabels.vibe) ? rawLabels.vibe : [];
-  const dispoLabels = Array.isArray(rawLabels.dispo) ? rawLabels.dispo : [];
-  const irlLabels = Array.isArray(rawLabels.irl) ? rawLabels.irl : [];
+  const rawLabels = (() => {
+    try {
+      const l = user.labels;
+      if (!l) return {};
+      if (typeof l === 'string') return JSON.parse(l);
+      if (typeof l === 'object' && !Array.isArray(l)) return l;
+      return {};
+    } catch { return {}; }
+  })();
+  const vibeLabels = (Array.isArray(rawLabels.vibe) ? rawLabels.vibe : []).filter((x) => typeof x === 'string');
+  const dispoLabels = (Array.isArray(rawLabels.dispo) ? rawLabels.dispo : []).filter((x) => typeof x === 'string');
+  const irlLabels = (Array.isArray(rawLabels.irl) ? rawLabels.irl : []).filter((x) => typeof x === 'string');
 
   const headerOpacity = scrollY.interpolate({ inputRange: [GALLERY_HEIGHT - 80, GALLERY_HEIGHT], outputRange: [0, 1], extrapolate: 'clamp' });
+
+  // ── DEBUG ──
+  ['bio', 'work', 'location', 'home_location', 'labels', 'interests', 'situation', 'astrology_title', 'full_name', 'user_name'].forEach((f) => {
+    const v = user?.[f];
+    if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+      console.warn(`[OBJECT RENDER BUG] user/[id] user.${f}`, JSON.stringify(v));
+    }
+  });
+  // ── END DEBUG ──
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -279,7 +270,7 @@ const lifestyleBadges = [
           {/* Name / age / location overlay */}
           <View style={styles.galleryNameBlock}>
             <Text style={styles.galleryName} numberOfLines={1}>
-              {user.full_name || user.user_name}
+              {String(user.full_name || user.user_name || '')}
               {age ? <Text style={styles.galleryAge}>, {age}</Text> : null}
             </Text>
             {city ? (
@@ -297,7 +288,7 @@ const lifestyleBadges = [
             {lifestyleBadges.map((b, i) => (
               <View key={i} style={[styles.badge, { backgroundColor: b.bg }]}>
                 <Ionicons name={b.icon} size={13} color={b.color} />
-                <Text style={[styles.badgeText, { color: b.color }]}>{b.label}</Text>
+                <Text style={[styles.badgeText, { color: b.color }]}>{String(b.label ?? '')}</Text>
               </View>
             ))}
           </View>
@@ -361,7 +352,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {vibeLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#FFF0F3' }]}>
-                      <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{l}</Text>
+                      <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -373,7 +364,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {dispoLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#E0F2FE' }]}>
-                      <Text style={[styles.chipText, { color: '#0369A1' }]}>{l}</Text>
+                      <Text style={[styles.chipText, { color: '#0369A1' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -385,7 +376,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {irlLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#E8D5F5' }]}>
-                      <Text style={[styles.chipText, { color: '#6D28D9' }]}>{l}</Text>
+                      <Text style={[styles.chipText, { color: '#6D28D9' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -394,10 +385,6 @@ const lifestyleBadges = [
           </View>
         )}
 
-        {/* ── Ice Breaker (voice fun fact) ── */}
-        {user.voice_fun_fact ? (
-          <VoiceFunFactPlayer uri={getStorageUrl(user.voice_fun_fact)} colors={colors} />
-        ) : null}
 
         {/* ── Sports ── */}
         {interests.sports.length > 0 && (
@@ -409,7 +396,7 @@ const lifestyleBadges = [
             <View style={styles.chipsWrap}>
               {interests.sports.map((s, i) => (
                 <View key={i} style={[styles.chip, { backgroundColor: '#EDE9FE' }]}>
-                  <Text style={[styles.chipText, { color: '#6D28D9' }]}>{s}</Text>
+                  <Text style={[styles.chipText, { color: '#6D28D9' }]}>{String(s ?? '')}</Text>
                 </View>
               ))}
             </View>
@@ -426,7 +413,7 @@ const lifestyleBadges = [
             <View style={styles.chipsWrap}>
               {interests.hobbies.map((h, i) => (
                 <View key={i} style={[styles.chip, { backgroundColor: PALETTE.rosePale }]}>
-                  <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{h}</Text>
+                  <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{String(h ?? '')}</Text>
                 </View>
               ))}
             </View>
@@ -443,9 +430,8 @@ const lifestyleBadges = [
             <View style={styles.wallGrid}>
               {wallPosts.map((post, i) => {
                 const rawPhotos = parseDbJson(post.wall_photo);
-                console.log("rawPhotos", rawPhotos);
-                const uri = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? rawPhotos[0] : null;
-                console.log("uri", uri);
+                const first = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? rawPhotos[0] : null;
+                const uri = typeof first === 'string' ? first : null;
                 return uri ? (
                   <Image key={String(post.id)} source={{ uri }} style={styles.wallThumb} />
                 ) : null;
@@ -454,26 +440,19 @@ const lifestyleBadges = [
           </View>
         )}
 
-        <View style={{ height: 140 }} />
+        <View style={{ height: 120 }} />
       </Animated.ScrollView>
 
-      {/* ── Action bar (fixed bottom) ──
+      {/* ── Floating message button (other user only) ── */}
       {!isOwnProfile && (
-        <View style={[styles.actionBar, { backgroundColor: colors.background, borderTopColor: colors.backgroundSelected }]}>
-          <TouchableOpacity style={[styles.actionBtn, styles.nopeBtn]} onPress={handleNope} disabled={swiping} activeOpacity={0.7}>
-            <Ionicons name="close" size={26} color="#EF4444" />
-            <Text style={[styles.actionLabel, { color: '#EF4444' }]}>Passer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.likeBtn]} onPress={handleLike} disabled={swiping} activeOpacity={0.7}>
-            {swiping ? <ActivityIndicator size="small" color="#fff" /> : (
-              <>
-                <Ionicons name="heart" size={26} color="#fff" />
-                <Text style={[styles.actionLabel, { color: '#fff' }]}>J'aime</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}*/}
+        <TouchableOpacity
+          style={styles.messageFab}
+          onPress={() => router.push('/(tabs)/messages')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="chatbubble" size={26} color="#fff" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -625,10 +604,6 @@ const styles = StyleSheet.create({
   labelGroupTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
 
   // ── Voice ice breaker ──
-  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
-  voicePlayBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  voiceLabel: { fontSize: 14, fontWeight: '500', flex: 1 },
-
   // ── Wall post grid ──
   wallGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   wallThumb: {
@@ -638,40 +613,22 @@ const styles = StyleSheet.create({
     backgroundColor: PALETTE.rosePale,
   },
 
-  // ── Action bar ──
-  actionBar: {
+  // ── Floating message button ──
+  messageFab: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-    paddingVertical: 16,
-    paddingBottom: 34,
-    borderTopWidth: 1,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 36,
-    paddingVertical: 14,
-    borderRadius: 20,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  nopeBtn: {
-    backgroundColor: '#FFF1F1',
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    shadowColor: '#EF4444',
-  },
-  likeBtn: {
+    bottom: 36,
+    right: 24,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: PALETTE.rose,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 20,
   },
-  actionLabel: { fontSize: 15, fontWeight: '700' },
 });

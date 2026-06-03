@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { messagesApi, swipesApi, eventsApi, getStorageUrl } from '@/services/api';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { messagesApi, eventsApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
@@ -42,20 +42,17 @@ export default function MessagesScreen() {
   const snackbar = useSnackbar();
 
   const [conversations, setConversations] = useState([]);
-  const [matches, setMatches] = useState([]);
   const [joinedEvents, setJoinedEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [convRes, matchRes, eventRes] = await Promise.all([
+      const [convRes, eventRes] = await Promise.all([
         messagesApi.getConversations(),
-        swipesApi.getMatches().catch(() => ({ data: { matches: [] } })),
         eventsApi.getEvents('joined').catch(() => ({ data: { events: [] } })),
       ]);
       setConversations(convRes.data?.conversations ?? []);
-      setMatches(matchRes.data?.matches ?? []);
       setJoinedEvents(eventRes.data?.events ?? []);
     } catch (err) {
       console.error('Failed to load messages:', err);
@@ -109,39 +106,6 @@ export default function MessagesScreen() {
     return img ? getStorageUrl(img) : null;
   };
 
-  // ── Messages not match ──
-  const renderMatch = (match, index) => {
-    const img = getAvatar(match.profile_image);
-    const name = (typeof match.full_name === 'string' && match.full_name) ||
-                 (typeof match.user_name === 'string' && match.user_name) || '?';
-    const firstWord = name.split(' ')[0];
-
-    return (
-      <Animated.View key={match.id} entering={FadeInRight.delay(Math.min(index * 60, 360)).duration(350).springify().damping(15)}>
-        <TouchableOpacity
-          style={styles.matchBubble}
-          onPress={() => router.push(`/(tabs)/chat/${match.conversation_id}`)}
-          activeOpacity={0.7}
-        >
-        <View style={styles.matchAvatarWrap}>
-          {img ? (
-            <Image source={{ uri: img }} style={styles.matchAvatar} />
-          ) : (
-            <View style={[styles.matchAvatarFallback, { backgroundColor: PALETTE.rosePale }]}>
-              <Text style={styles.matchAvatarInitials}>{getInitials(name)}</Text>
-            </View>
-          )}
-          <View style={styles.matchHeart}>
-            <Ionicons name="heart" size={10} color="#fff" />
-          </View>
-        </View>
-        <Text style={[styles.matchName, { color: colors.textSecondary }]} numberOfLines={1}>
-          {firstWord}
-        </Text>        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
-
   // ── Event bubble ──
   const renderEventBubble = (event, index) => {
     const color = CATEGORY_COLORS[event.category] || PALETTE.rose;
@@ -176,6 +140,14 @@ export default function MessagesScreen() {
 
   // ── Conversation row ──
   const renderItem = ({ item, index }) => {
+    // ── DEBUG ──
+    ['last_message', 'other_user_name', 'other_user_image'].forEach((f) => {
+      const v = item[f];
+      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+        console.warn(`[OBJECT RENDER BUG] conversation.${f}`, JSON.stringify(v));
+      }
+    });
+    // ── END DEBUG ──
     const img = getAvatar(item.other_user_image);
     const isMe = item.last_message_sender_id && item.last_message_sender_id !== item.other_user_id;
     const streak = item.streak ?? 0;
@@ -215,7 +187,7 @@ export default function MessagesScreen() {
               {typeof item.other_user_name === 'string' ? item.other_user_name : ''}
             </Text>
             <View style={styles.convTopRight}>
-              {streak >= 2 && (
+              {streak >= 1 && (
                 <View style={styles.streakPill}>
                   <Text style={styles.streakPillText}>🔥 {streak}</Text>
                 </View>
@@ -256,7 +228,7 @@ export default function MessagesScreen() {
     );
   }
 
-  const hasContent = conversations.length > 0 || matches.length > 0 || joinedEvents.length > 0;
+  const hasContent = conversations.length > 0 || joinedEvents.length > 0;
 
   const ListHeader = () => (
     <>
@@ -277,19 +249,7 @@ export default function MessagesScreen() {
         </View>
       )}
 
-      {/* Messages row */}
-      {matches.length > 0 && (
-        <View style={styles.matchesSection}>
-          <Text style={[styles.matchesLabel, { color: colors.text }]}>Tes matchs</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.matchesRow}
-          >
-            {matches.map(renderMatch)}
-          </ScrollView>
-        </View>
-      )}
+      {/* Matches row removed — tap conversation avatar to view profile */}
     </>
   );
 
@@ -336,11 +296,11 @@ export default function MessagesScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={<ListHeader />}
           ListEmptyComponent={
-            matches.length > 0 || joinedEvents.length > 0 ? (
+            joinedEvents.length > 0 ? (
               <View style={styles.noConvHint}>
                 <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
                 <Text style={[styles.noConvText, { color: colors.textSecondary }]}>
-                  Ne restez pas seul, rejoignez un événements
+                  Pas encore de conversations — rejoins un événement !
                 </Text>
               </View>
             ) : null
@@ -425,75 +385,6 @@ const styles = StyleSheet.create({
   eventBubbleTime: { fontSize: 11, lineHeight: 14 },
   eventMembersRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   eventMembersText: { fontSize: 11, fontWeight: '600' },
-
-  // ── Matches row ──
-  matchesSection: {
-    paddingTop: 8,
-    paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: PALETTE.border,
-    marginBottom: 4,
-  },
-  matchesLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    paddingHorizontal: Spacing.four,
-    marginBottom: 12,
-    color: PALETTE.textLight,
-  },
-  matchesRow: {
-    paddingHorizontal: Spacing.four,
-    gap: 16,
-  },
-  matchBubble: {
-    alignItems: 'center',
-    gap: 6,
-    width: 62,
-  },
-  matchAvatarWrap: {
-    position: 'relative',
-  },
-  matchAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2.5,
-    borderColor: PALETTE.rose,
-  },
-  matchAvatarFallback: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2.5,
-    borderColor: PALETTE.rose,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  matchAvatarInitials: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: PALETTE.rose,
-  },
-  matchHeart: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: PALETTE.rose,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  matchName: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
 
   // ── Conversation list ──
   listContent: {
