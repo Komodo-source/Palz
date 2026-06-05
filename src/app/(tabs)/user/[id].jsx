@@ -6,6 +6,7 @@ import {
   Dimensions,
   Image,
   ActivityIndicator,
+  Alert,
   TouchableOpacity,
   ScrollView,
   Animated,
@@ -13,11 +14,13 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { usersApi, swipesApi, wallApi, getStorageUrl } from '@/services/api';
+import { usersApi, swipesApi, wallApi, messagesApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { getProfileImages, parseDbJson } from '@/utils/parsers';
 import { useAuth } from '@/contexts/auth';
+import { UserProfileSkeleton } from '@/components/Skeleton';
+import ImageViewerModal from '@/components/ImageViewerModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GALLERY_HEIGHT = Math.round(SCREEN_HEIGHT * 0.74);
@@ -71,6 +74,8 @@ export default function UserDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [activePhoto, setActivePhoto] = useState(0);
   const [swiping, setSwiping] = useState(false);
+  const [openingDm, setOpeningDm] = useState(false);
+  const [viewerUri, setViewerUri] = useState(null);
 
   const isOwnProfile = currentUser?.id === userId;
 
@@ -123,12 +128,40 @@ export default function UserDetailScreen() {
     }
   };
 
+  const handleOpenDm = async () => {
+    if (openingDm || !userId) return;
+    setOpeningDm(true);
+    try {
+      const res = await messagesApi.startConversation(userId);
+      const { conversation_id, limit_reached, free_limit } = res.data;
+      if (!conversation_id) throw new Error('Conversation introuvable');
+      if (limit_reached) {
+        Alert.alert(
+          'Limite atteinte',
+          `Tu as déjà envoyé ${free_limit} messages à cette personne. Deviens Premium pour continuer !`,
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Devenir Premium ✨', onPress: () => router.navigate('/(tabs)/profil/payement_page') },
+            { text: 'Voir quand même', onPress: () => router.navigate(`/(tabs)/chat/${conversation_id}`) },
+          ]
+        );
+      } else {
+        router.navigate(`/(tabs)/chat/${conversation_id}`);
+      }
+    } catch (err) {
+      console.error('Open DM error:', err);
+      Alert.alert('Erreur', err?.response?.data?.error || "Impossible d'ouvrir la conversation.");
+    } finally {
+      setOpeningDm(false);
+    }
+  };
+
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+      <>
         <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator size="large" color={PALETTE.rose} />
-      </View>
+        <UserProfileSkeleton colors={colors} isDark={colorScheme === 'dark'} />
+      </>
     );
   }
 
@@ -225,7 +258,9 @@ const lifestyleBadges = [
               {photos.map((item, index) => {
                 const uri = `${SUPABASE_PHOTOS_URL}${item}`;
                 return (
-                  <Image key={index} source={{ uri }} style={styles.galleryImage} resizeMode="cover" />
+                  <TouchableOpacity key={index} activeOpacity={0.95} onPress={() => setViewerUri(uri)}>
+                    <Image source={{ uri }} style={styles.galleryImage} resizeMode="cover" />
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>
@@ -385,7 +420,6 @@ const lifestyleBadges = [
           </View>
         )}
 
-
         {/* ── Sports ── */}
         {interests.sports.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
@@ -433,7 +467,9 @@ const lifestyleBadges = [
                 const first = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? rawPhotos[0] : null;
                 const uri = typeof first === 'string' ? first : null;
                 return uri ? (
-                  <Image key={String(post.id)} source={{ uri }} style={styles.wallThumb} />
+                  <TouchableOpacity key={String(post.id)} activeOpacity={0.85} onPress={() => setViewerUri(uri)}>
+                    <Image source={{ uri }} style={styles.wallThumb} />
+                  </TouchableOpacity>
                 ) : null;
               })}
             </View>
@@ -443,14 +479,20 @@ const lifestyleBadges = [
         <View style={{ height: 120 }} />
       </Animated.ScrollView>
 
+      <ImageViewerModal uri={viewerUri} onClose={() => setViewerUri(null)} />
+
       {/* ── Floating message button (other user only) ── */}
       {!isOwnProfile && (
         <TouchableOpacity
-          style={styles.messageFab}
-          onPress={() => router.push('/(tabs)/messages')}
+          style={[styles.messageFab, { opacity: openingDm ? 0.7 : 1 }]}
+          onPress={handleOpenDm}
+          disabled={openingDm}
           activeOpacity={0.85}
         >
-          <Ionicons name="chatbubble" size={26} color="#fff" />
+          {openingDm
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Ionicons name="chatbubble" size={26} color="#fff" />
+          }
         </TouchableOpacity>
       )}
     </View>

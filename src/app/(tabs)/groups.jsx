@@ -13,6 +13,7 @@ import {
   Platform,
   ScrollView,
   Modal,
+  Linking
 } from 'react-native';
 
 import { router, useFocusEffect } from 'expo-router';
@@ -22,9 +23,10 @@ import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayer
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
-import { parseDbJson } from '@/utils/parsers';
+import { parseDbJson, safeStr } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 import * as Location from 'expo-location';
+import { GroupsSkeleton } from '@/components/Skeleton';
 
 const OUTDOOR_KEYWORDS = ['sport', 'plage', 'parc', 'balade', 'randon', 'extérieur', 'jardin', 'nature', 'piscine', 'forêt', 'vélo'];
 
@@ -61,6 +63,25 @@ function formatTime(dateStr) {
 }
 
 const GV_WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+
+
+const openMapWithSearch = (searchQuery) => {
+  const encodedQuery = encodeURIComponent(searchQuery);
+
+  const url = Platform.select({
+    ios: `maps://?q=${encodedQuery}`,
+    android: `geo:0,0?q=${encodedQuery}`,
+  });
+
+  Linking.canOpenURL(url)
+    .then((supported) => {
+      if (supported) {
+        return Linking.openURL(url);
+      }
+    })
+    .catch((err) => console.error('An error occurred while opening the map:', err));
+};
+
 
 function GroupVoiceBubble({ uri, isMine, colors, isDark, time }) {
   const player = useAudioPlayer(uri ? { uri } : null);
@@ -677,7 +698,7 @@ export default function GroupsScreen() {
                             </View>
                           )}
                           <Text style={[dissStyles.memberBlockName, { color: colors.text }]}>
-                            {member.full_name || member.user_name}
+                            {safeStr(member.full_name) || safeStr(member.user_name, '?')}
                           </Text>
                         </View>
 
@@ -769,7 +790,7 @@ export default function GroupsScreen() {
         {/* Common interest + compatibility */}
         <View style={[styles.interestCard, { backgroundColor: PALETTE.rosePale }]}>
           <Ionicons name="sparkles" size={20} color={PALETTE.rose} />
-          <Text style={styles.interestText}>{group.common_interest || 'Groupe hebdomadaire'}</Text>
+          <Text style={styles.interestText}>{safeStr(group.common_interest, 'Groupe hebdomadaire')}</Text>
         </View>
 
         {/* Compatibility breakdown */}
@@ -854,7 +875,9 @@ export default function GroupsScreen() {
               const hasVoted = group.activity_votes?.my_votes?.includes(index);
               const isVoting = votingActivity === index;
               return (
-                <View key={index} style={[styles.activityRow, index > 0 && styles.activityRowBorder]}>
+                <TouchableOpacity key={index} style={[styles.activityRow, index > 0 && styles.activityRowBorder]}
+                onPress={() => openMapWithSearch(activity.title)}>
+
                   <View style={[styles.activityIcon, { backgroundColor: activity.color + '22' }]}>
                     <Ionicons name={activity.icon || 'star-outline'} size={22} color={activity.color} />
                   </View>
@@ -884,16 +907,19 @@ export default function GroupsScreen() {
                     {isVoting
                       ? <ActivityIndicator size="small" color={hasVoted ? '#fff' : PALETTE.rose} />
                       : <>
-                          <Text style={styles.activityVoteEmoji}>👍</Text>
+                            <Ionicons name="heart-outline" style={styles.activityVoteEmoji} size={20} color={PALETTE.rose}/>
                           {voteCount > 0 && (
-                            <Text style={[styles.activityVoteCount, { color: hasVoted ? '#fff' : colors.textSecondary }]}>
-                              {voteCount}
-                            </Text>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, }}>
+                              <Ionicons name="heart" size={20} color={PALETTE.white} />
+                              <Text style={[styles.activityVoteCount, { color: hasVoted ? '#fff' : colors.textSecondary }]}>
+                                {voteCount}
+                              </Text>
+                            </View>
                           )}
                         </>
                     }
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -945,7 +971,7 @@ export default function GroupsScreen() {
                   )}
                   <View style={styles.memberInfo}>
                     <Text style={[styles.memberName, { color: colors.text }]}>
-                      {showFullName ? (member.full_name || member.user_name) : firstName}
+                      {showFullName ? safeStr(member.full_name) || safeStr(member.user_name, '?') : firstName}
                       {isSelf ? ' (toi)' : ''}
                     </Text>
                     {!showFullName && firstVibe && (
@@ -1037,7 +1063,7 @@ export default function GroupsScreen() {
                         </View>
                     }
                     <Text style={[styles.memberName, { color: colors.text, flex: 1 }]}>
-                      {member.full_name || member.user_name}
+                      {safeStr(member.full_name) || safeStr(member.user_name, '?')}
                     </Text>
                     <TouchableOpacity
                       style={[styles.memberVoteBtn, { backgroundColor: vote === true ? PALETTE.success : colors.backgroundSelected }]}
@@ -1224,7 +1250,7 @@ export default function GroupsScreen() {
                   ]}
                 >
                   <Text style={[styles.chatText, { color: isMine ? '#fff' : colors.text }]}>
-                    {item.content}
+                    {safeStr(item.content)}
                   </Text>
                 </View>
               )}
@@ -1331,13 +1357,8 @@ export default function GroupsScreen() {
     </KeyboardAvoidingView>
   );
 
-  // ── Loading state ──
   if (loading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={PALETTE.rose} />
-      </View>
-    );
+    return <GroupsSkeleton colors={colors} isDark={isDark} />;
   }
 
   return (
@@ -1693,9 +1714,7 @@ const styles = StyleSheet.create({
     minWidth: 44,
     justifyContent: 'center',
   },
-  activityVoteEmoji: {
-    fontSize: 16,
-  },
+
   activityVoteCount: {
     fontSize: 13,
     fontWeight: '700',

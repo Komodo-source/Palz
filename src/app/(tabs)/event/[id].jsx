@@ -29,7 +29,7 @@ import { eventsApi, uploadApi, getStorageUrl } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
-import { parseDbJson } from '@/utils/parsers';
+import { parseDbJson, safeStr } from '@/utils/parsers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -187,6 +187,7 @@ export default function EventDetailScreen() {
 
   const flatListRef = useRef(null);
   const recordTimerRef = useRef(null);
+  const pollRef = useRef(null);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -229,6 +230,17 @@ export default function EventDetailScreen() {
       loadMessages();
     }
   }, [event?.is_joined, loadMessages]);
+
+  // Poll chat every 8s while joined and event not expired
+  useEffect(() => {
+    clearInterval(pollRef.current);
+    if (!event?.is_joined) return;
+    const startsAt = event.starts_at ? new Date(event.starts_at).getTime() : null;
+    const expired = startsAt ? startsAt + 24 * 3600 * 1000 < Date.now() : false;
+    if (expired) return;
+    pollRef.current = setInterval(loadMessages, 8000);
+    return () => clearInterval(pollRef.current);
+  }, [event?.is_joined, event?.starts_at, loadMessages]);
 
   const handleJoin = async () => {
     setJoining(true);
@@ -440,7 +452,7 @@ export default function EventDetailScreen() {
               ]}
             >
               <Text style={[styles.msgText, { color: isMe ? '#fff' : colors.text }]}>
-                {item.content}
+                {safeStr(item.content)}
               </Text>
             </View>
           )}
@@ -518,7 +530,7 @@ export default function EventDetailScreen() {
           <TouchableOpacity style={styles.infoRow} onPress={openMaps} activeOpacity={0.7}>
             <Ionicons name="location-outline" size={18} color={PALETTE.rose} />
             <Text style={[styles.infoText, styles.infoTextLink, { color: colors.text }]}>
-              {event.location_name}
+              {safeStr(event.location_name)}
             </Text>
             <Ionicons name="open-outline" size={14} color={PALETTE.rose} />
           </TouchableOpacity>
@@ -548,25 +560,58 @@ export default function EventDetailScreen() {
         )}
 
         {/* Description */}
-        {!!event.description && (
+        {typeof event.description === 'string' && event.description ? (
           <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
             {event.description}
           </Text>
-        )}
+        ) : null}
 
         {/* Members */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Participantes</Text>
+        <View style={styles.membersTitleRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Participantes</Text>
+          {members.length > 0 && (
+            <View style={styles.rsvpSummary}>
+              {[
+                { key: 'coming',      icon: 'checkmark-circle', color: '#10B981' },
+                { key: 'maybe',       icon: 'help-circle',      color: '#F59E0B' },
+                { key: 'unavailable', icon: 'close-circle',     color: '#EF4444' },
+              ].map((opt) => {
+                const count = members.filter((m) => (m.rsvp_status || 'coming') === opt.key).length;
+                if (count === 0) return null;
+                return (
+                  <View key={opt.key} style={styles.rsvpSummaryItem}>
+                    <Ionicons name={opt.icon} size={13} color={opt.color} />
+                    <Text style={[styles.rsvpSummaryCount, { color: opt.color }]}>{count}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
         <View style={styles.membersRow}>
-          {members.map((m) => (
-            <TouchableOpacity key={m.id} style={styles.memberItem}
-              onPress={() => router.push(`/(tabs)/user/${m.id}`)}
-            >
-              <MemberAvatar member={m} />
-              <Text style={[styles.memberName, { color: colors.textSecondary }]} numberOfLines={1}>
-                {(m.full_name || '?').split(' ')[0]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {members.map((m) => {
+            const rsvp = m.rsvp_status || 'coming';
+            const rsvpMeta = {
+              coming:      { icon: 'checkmark-circle', color: '#10B981' },
+              maybe:       { icon: 'help-circle',      color: '#F59E0B' },
+              unavailable: { icon: 'close-circle',     color: '#EF4444' },
+            }[rsvp] || { icon: 'checkmark-circle', color: '#10B981' };
+            return (
+              <TouchableOpacity key={m.id} style={styles.memberItem}
+                onPress={() => router.push(`/(tabs)/user/${m.id}`)}
+              >
+                <View style={styles.memberAvatarWrap}>
+                  <MemberAvatar member={m} />
+                  <View style={[styles.rsvpDot, { backgroundColor: rsvpMeta.color }]}>
+                    <Ionicons name={rsvpMeta.icon} size={10} color="#fff" />
+                  </View>
+                </View>
+                <Text style={[styles.memberName, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {safeStr(m.full_name, '?').split(' ')[0]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Join / Leave button */}
@@ -907,11 +952,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     marginBottom: 16,
   },
-  memberItem: { alignItems: 'center', gap: 4, width: 52 },
+  membersTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  rsvpSummary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rsvpSummaryItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  rsvpSummaryCount: { fontSize: 12, fontWeight: '700' },
+  memberItem: { alignItems: 'center', gap: 4, width: 56 },
+  memberAvatarWrap: { position: 'relative' },
   memberAvatar: { width: 48, height: 48, borderRadius: 24 },
   memberAvatarFallback: { backgroundColor: PALETTE.rosePale, alignItems: 'center', justifyContent: 'center' },
   memberAvatarInitials: { fontSize: 16, fontWeight: '700', color: PALETTE.rose },
   memberName: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
+  rsvpDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
 
   joinBtn: {
     flexDirection: 'row',

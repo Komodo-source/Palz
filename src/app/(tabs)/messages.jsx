@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
-  ActivityIndicator,
   ScrollView,
   Alert,
 } from 'react-native';
@@ -18,6 +17,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
+import { MessagesSkeleton } from '@/components/Skeleton';
+import cache from '@/services/cache';
 
 const CATEGORY_ICONS = {
   bar: 'wine-outline',
@@ -46,17 +47,25 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async ({ background = false } = {}) => {
     try {
       const [convRes, eventRes] = await Promise.all([
         messagesApi.getConversations(),
         eventsApi.getEvents('joined').catch(() => ({ data: { events: [] } })),
       ]);
-      setConversations(convRes.data?.conversations ?? []);
-      setJoinedEvents(eventRes.data?.events ?? []);
+      const conversations = convRes.data?.conversations ?? [];
+      const now = new Date();
+      const events = (eventRes.data?.events ?? []).filter(
+        (e) => !e.starts_at || new Date(e.starts_at) > now
+      );
+      setConversations(conversations);
+      setJoinedEvents(events);
+      cache.set('messages_list', { conversations, events });
     } catch (err) {
-      console.error('Failed to load messages:', err);
-      Alert.alert('Erreur', "Impossible de charger les conversations.");
+      if (!background) {
+        console.error('Failed to load messages:', err);
+        Alert.alert('Erreur', "Impossible de charger les conversations.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -64,7 +73,21 @@ export default function MessagesScreen() {
   }, []);
 
   useFocusEffect(
-    useCallback(() => { fetchAll(); }, [fetchAll])
+    useCallback(() => {
+      let cancelled = false;
+      cache.get('messages_list').then((cached) => {
+        if (cancelled) return;
+        if (cached) {
+          setConversations(cached.conversations);
+          setJoinedEvents(cached.events);
+          setLoading(false);
+          fetchAll({ background: true });
+        } else {
+          fetchAll();
+        }
+      });
+      return () => { cancelled = true; };
+    }, [fetchAll])
   );
 
   const formatTime = (dateStr) => {
@@ -221,11 +244,7 @@ export default function MessagesScreen() {
   };
 
   if (loading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={PALETTE.rose} />
-      </View>
-    );
+    return <MessagesSkeleton colors={colors} isDark={colorScheme === 'dark'} />;
   }
 
   const hasContent = conversations.length > 0 || joinedEvents.length > 0;

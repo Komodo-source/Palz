@@ -24,6 +24,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
 import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ImageViewerModal from '@/components/ImageViewerModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMG_BUBBLE_W = SCREEN_WIDTH * 0.6;
@@ -179,6 +181,7 @@ export default function ChatScreen() {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const [isRecording, setIsRecording] = useState(false);
+  const [viewerUri, setViewerUri] = useState(null);
   const recordTimerRef = useRef(null);
   const { other_user_name, id_other } = useLocalSearchParams();
 
@@ -187,7 +190,26 @@ export default function ChatScreen() {
     try {
       const res = await messagesApi.getMessages(conversationId);
       const msgs = res.data?.messages ?? [];
-      setMessages(msgs);
+
+      //reading cache
+      let value;
+      try{
+        value = await AsyncStorage.getItem(`message_${res.data.conversation.other_user_id}`);
+      }catch(e){
+        ;
+      }
+      if (value){
+      try{
+          setMessages(await AsyncStorage.setItem(`message_${res.data.conversation.other_user_id}`, msgs))
+        }catch(e){
+          console.error(`caching error ${e}`);
+        }
+      }else{
+        setMessages(msgs);
+      }
+
+      //cache storage
+
       if (res.data?.conversation) {
         setConversation(res.data.conversation);
         if (msgs.length === 0 && res.data.conversation.other_user_id && !iceBreaker && !iceBreakerDismissed) {
@@ -661,8 +683,11 @@ export default function ChatScreen() {
               isSeen={item.is_seen}
             />
           ) : isImage ? (
-            <View style={[styles.imgBubble, bubbleRadius]}>
-
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setViewerUri(getStorageUrl(item.media_url))}
+              style={[styles.imgBubble, bubbleRadius]}
+            >
               <Image
                 source={{ uri: getStorageUrl(item.media_url) }}
                 style={styles.chatImage}
@@ -678,7 +703,7 @@ export default function ChatScreen() {
                   />
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           ) : (
             <View style={[
               styles.bubble,
@@ -891,6 +916,7 @@ export default function ChatScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+      <ImageViewerModal uri={viewerUri} onClose={() => setViewerUri(null)} />
     </View>
   );
 }

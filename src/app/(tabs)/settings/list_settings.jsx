@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/auth';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usersApi, swipesApi } from '@/services/api';
+import { safeStr } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 import storage from '@/services/storage';
 
@@ -732,11 +733,11 @@ export default function ListSettings() {
                   <View style={[styles.blockedRow, { borderBottomColor: colors.border }]}>
                     <View style={[styles.blockedAvatar, { backgroundColor: PALETTE.rosePale }]}>
                       <Text style={styles.blockedAvatarText}>
-                        {item.name.charAt(0).toUpperCase()}
+                        {safeStr(item.name, '?').charAt(0).toUpperCase()}
                       </Text>
                     </View>
                     <Text style={[styles.blockedName, { color: colors.text }]} numberOfLines={1}>
-                      {item.name}
+                      {safeStr(item.name, '?')}
                     </Text>
                     <TouchableOpacity
                       style={styles.unblockBtn}

@@ -1,7 +1,20 @@
 /**
+ * Safely convert a value to a string for rendering as a React child.
+ * Returns the fallback for objects, null, and undefined.
+ * @param {any} val
+ * @param {string} fallback
+ * @returns {string}
+ */
+export function safeStr(val, fallback = '') {
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return fallback;
+}
+
+/**
  * Parse a database JSON text field into its native value.
  * PostgreSQL returns JSON columns as strings, so we need to parse them.
- * 
+ *
  * @param {any} raw - The raw value from the database
  * @returns {any} - The parsed value, or the raw value if it's not a JSON string
  */

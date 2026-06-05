@@ -12,7 +12,7 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -21,10 +21,10 @@ import { wallApi, uploadApi, messagesApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
-import { parseDbJson } from '@/utils/parsers';
+import { parseDbJson, safeStr } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 
-import storage from '@/services/storage';
+import { WallSkeleton } from '@/components/Skeleton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GAP = 10;
@@ -39,10 +39,12 @@ function formatTimeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
+  const diffdays = Math.floor(diffMs / 86400000);
+
   if (diffMins < 1) return "À l'instant";
   if (diffMins < 60) return `${diffMins}min`;
   if (diffHours < 24) return `${diffHours}h`;
-  return '> 24h';
+  return `${diffdays} jours`;
 }
 
 // ── Reaction button ──
@@ -114,7 +116,17 @@ export default function WallScreen() {
         setCountdown(getThemeCountdown(newTheme.ends_at));
         if (!hasShownTheme.current) {
           hasShownTheme.current = true;
-          setThemeModal(true);
+          try {
+            const value = await AsyncStorage.getItem('has_seen_modal');
+            if (value !== null) {
+              setThemeModal(false);
+            } else {
+              setThemeModal(true);
+            }
+          } catch (e) {
+            console.error("Error reading from AsyncStorage:", e);
+            setThemeModal(true);
+          }
         }
       }
     } catch (err) {
@@ -306,7 +318,7 @@ export default function WallScreen() {
             )}
             <View style={{ flex: 1 }}>
               <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
-                {item.user_full_name || item.user_name || 'Inconnu'}
+                {safeStr(item.user_full_name) || safeStr(item.user_name, 'Inconnu')}
               </Text>
             </View>
 
@@ -351,6 +363,15 @@ export default function WallScreen() {
     );
   };
 
+  const dismissModal = async () => {
+    setThemeModal(false);
+    try {
+      await AsyncStorage.setItem('has_seen_modal', 'true');
+    } catch (e) {
+      console.error('Error saving to AsyncStorage:', e);
+    }
+  };
+
   // One post per user — sorted by most liked (reaction_count descending)
   const displayPosts = useMemo(() => {
     const seen = new Set();
@@ -367,11 +388,7 @@ export default function WallScreen() {
   const rightPosts = displayPosts.filter((_, i) => i % 2 === 1);
 
   if (loading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={PALETTE.rose} />
-      </View>
-    );
+    return <WallSkeleton colors={colors} isDark={colorScheme === 'dark'} />;
   }
 
   return (
@@ -459,7 +476,6 @@ export default function WallScreen() {
         </ScrollView>
       )}
 
-      {/* ── Theme modal ── */}
       <Modal visible={themeModal} transparent animationType="fade" onRequestClose={() => setThemeModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.themeModalBox}>
@@ -485,7 +501,7 @@ export default function WallScreen() {
               <Ionicons name="camera" size={18} color="#fff" />
               <Text style={styles.themeModalPostBtnText}>Poster maintenant</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setThemeModal(false)} style={styles.themeModalSkip} activeOpacity={0.7}>
+            <TouchableOpacity onPress={dismissModal} style={styles.themeModalSkip} activeOpacity={0.7}>
               <Text style={styles.themeModalSkipText}>Voir le mur d'abord</Text>
             </TouchableOpacity>
           </View>
@@ -631,11 +647,9 @@ const styles = StyleSheet.create({
     shadowColor: PALETTE.rose, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
 
-  // ── Theme modal ──
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   themeModalBox: { width: '100%', backgroundColor: '#fff', borderRadius: 28, padding: 28, alignItems: 'center', gap: 10 },
   themeModalIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: PALETTE.rosePale, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  themeModalEyebrow: { fontSize: 12, fontWeight: '600', color: PALETTE.rose, letterSpacing: 1, textTransform: 'uppercase' },
   themeModalTitle: { fontSize: 22, fontWeight: '800', color: '#4A3728', textAlign: 'center', lineHeight: 28 },
   themeModalCountdown: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: PALETTE.rosePale, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   themeModalCountdownText: { fontSize: 13, fontWeight: '700', color: PALETTE.rose },

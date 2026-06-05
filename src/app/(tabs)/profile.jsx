@@ -19,6 +19,8 @@ import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getStorageUrl, swipesApi, usersApi, messagesApi, eventsApi } from '@/services/api';
 import storage from '@/services/storage';
+import cache from '@/services/cache';
+import ImageViewerModal from '@/components/ImageViewerModal';
 import { useSnackbar } from '@/contexts/snackbar';
 import { parseDbJson } from '@/utils/parsers';
 
@@ -106,15 +108,37 @@ export default function ProfileScreen() {
   const [numberRelation, setNumberRelation] = useState(null);
   const [weekStats, setWeekStats] = useState(null);
   const [recapModal, setRecapModal] = useState(false);
+  const [viewerUri, setViewerUri] = useState(null);
   const hasCheckedRecap = useRef(false);
   const animRelation = useCountUp(numberRelation);
   const animPhoto = useCountUp(numberPhoto);
 
   useEffect(() => {
     if (!user) return;
-    parseNumberPhotos();
-    parseNumberRelation();
+    cache.get('profile_stats').then((cached) => {
+      if (cached) {
+        SetnumberPhoto(cached.numberPhoto);
+        setNumberRelation(cached.numberRelation);
+      }
+      loadStats();
+    });
   }, []);
+
+  const loadStats = async () => {
+    try {
+      const [photoRes, relationRes] = await Promise.all([
+        usersApi.getNumberPhoto(),
+        usersApi.getNumberRelation(),
+      ]);
+      const numberPhoto = photoRes.data?.nb_photo?.number_photo_posted ?? null;
+      const numberRelation = relationRes.data?.nb_relation?.count ?? null;
+      SetnumberPhoto(numberPhoto);
+      setNumberRelation(numberRelation);
+      cache.set('profile_stats', { numberPhoto, numberRelation }, 10 * 60 * 1000);
+    } catch {
+      // non-fatal
+    }
+  };
 
   useEffect(() => {
     if (hasCheckedRecap.current) return;
@@ -184,17 +208,6 @@ export default function ProfileScreen() {
   // Parse interests
   const interests = parseDbJson(user?.interests) || [];
 
-
-  const parseNumberRelation = async() => {
-    const res = await usersApi.getNumberRelation();
-    setNumberRelation(res.data?.nb_relation.count);
-  }
-
-
-  const parseNumberPhotos = async() => {
-    const res = await usersApi.getNumberPhoto()
-    SetnumberPhoto(res.data?.nb_photo.number_photo_posted);
-  }
 
 const formatDate = (dob) => {
     if (!dob || typeof dob === 'object') return null;
@@ -296,12 +309,13 @@ const formatDate = (dob) => {
           </View>
           <View style={styles.photoGrid}>
             {photos.slice(0, 6).map((p, i) => (
-              <Image
-                key={i}
-                source={{ uri: getStorageUrl(p) }}
-                style={styles.photoThumb}
-                resizeMode="cover"
-              />
+              <TouchableOpacity key={i} onPress={() => setViewerUri(getStorageUrl(p))} activeOpacity={0.85}>
+                <Image
+                  source={{ uri: getStorageUrl(p) }}
+                  style={styles.photoThumb}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
             ))}
           </View>
         </Animated.View>
@@ -433,6 +447,8 @@ const formatDate = (dob) => {
         Palz v1.0.0 · Fait avec amour
       </Text>
     </ScrollView>
+
+    <ImageViewerModal uri={viewerUri} onClose={() => setViewerUri(null)} />
 
     {/* ── Bilan de la semaine (dimanche uniquement) ── */}
     <Modal visible={recapModal} transparent animationType="slide" onRequestClose={() => setRecapModal(false)}>

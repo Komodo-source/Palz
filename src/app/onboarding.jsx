@@ -28,7 +28,7 @@ import { Human } from '@vladmandic/human';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-react-native';
 import { fetch, decodeJpeg } from '@tensorflow/tfjs-react-native';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PHOTO_SIZE = (SCREEN_WIDTH - 64) / 3;
@@ -735,12 +735,27 @@ export default function OnboardingScreen() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [zodiacRes, sportsRes, hobbiesRes, typeRes] = await Promise.all([
-          constantDataApi.getZodiacSigns(),
-          constantDataApi.getSports(),
-          constantDataApi.getHobbies(),
-          constantDataApi.getTypeSearch(),
-        ]);
+        const [zodiacRes, sportsRes, hobbiesRes, typeRes] = [];
+
+        const zodiac = await AsyncStorage.getItem('zodiac');
+        const sports = await AsyncStorage.getItem('sports');
+        const hobbies = await AsyncStorage.getItem('hobbies');
+        const type_searched = await AsyncStorage.getItem('type_searched');
+
+        if(zodiac&& sports&& hobbies&& type_searched){
+          const [zodiacRes, sportsRes, hobbiesRes, typeRes] =  [zodiac, sports, hobbies, type_searched]
+        }else{
+          const [zodiacRes, sportsRes, hobbiesRes, typeRes] = await Promise.all([
+            constantDataApi.getZodiacSigns(),
+            constantDataApi.getSports(),
+            constantDataApi.getHobbies(),
+            constantDataApi.getTypeSearch(),
+          ]);
+          await AsyncStorage.setItem('zodiac', zodiacRes);
+          await AsyncStorage.setItem('sports',  sportsRes);
+          await AsyncStorage.setItem('hobbies',  hobbiesRes);
+          await AsyncStorage.setItem('type_searched', typeRes);
+        }
         setZodiacSigns((zodiacRes.data?.astrology || []).map((s) => ({ id: s.id, name: s.name })));
         setSportsList((sportsRes.data?.sports || []).map((s) => s.title));
         // Extract data safely — backend keys vary

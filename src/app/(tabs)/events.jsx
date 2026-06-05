@@ -196,10 +196,12 @@ export default function EventsScreen() {
     fetch_();
   }, [userLocation]);
 
-  // Sort by distance when nearMe is on
+  // Sort by distance when nearMe is on; always strip events that have already started
   const events = useMemo(() => {
-    if (!nearMe || !userLocation) return eventsRaw;
-    return [...eventsRaw].sort((a, b) => {
+    const now = new Date();
+    const upcoming = eventsRaw.filter((e) => !e.starts_at || new Date(e.starts_at) > now);
+    if (!nearMe || !userLocation) return upcoming;
+    return [...upcoming].sort((a, b) => {
       const da =
         a.latitude && a.longitude
           ? haversineKm(userLocation.latitude, userLocation.longitude, parseFloat(a.latitude), parseFloat(a.longitude))
