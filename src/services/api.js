@@ -81,6 +81,7 @@ export const usersApi = {
   getProfile: (id) => api.get(`/users/${id}`),
   updateProfile: (data) => api.put('/users/profile', data),
   reportUser: (data) => api.post(`/users/report_user`, data),
+  updatePushToken: (token) => api.put('/users/push-token', { token }),
 };
 
 // ── Upload ──

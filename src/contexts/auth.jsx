@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import storage from '@/services/storage';
 import { authApi, setOnUnauthorized } from '@/services/api';
+import { registerForPushNotifications } from '@/services/notifications';
 
 const AuthContext = createContext(undefined);
 
@@ -62,6 +63,8 @@ export function AuthProvider({ children }) {
 
     setToken(newToken);
     setUser(newUser);
+
+    registerForPushNotifications().catch(() => {});
   }, []);
 
   const signup = useCallback(async (data) => {
@@ -73,6 +76,8 @@ export function AuthProvider({ children }) {
 
     setToken(newToken);
     setUser(newUser);
+
+    registerForPushNotifications().catch(() => {});
 
     return newToken;
   }, []);
