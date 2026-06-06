@@ -15,6 +15,17 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { paymentsApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 
+// RFC 4122 UUID v4 — uses Hermes crypto.randomUUID() when available (RN 0.70+)
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 const PALETTE = {
   rose: '#FF8FA3',
   roseLight: '#FFB5C2',
@@ -56,9 +67,13 @@ export default function PayementPage() {
     if (status === 'loading') return;
     setStatus('loading');
 
+    // Fresh idempotency key per tap — the backend will detect any pending PI
+    // for this user and reuse it, so we never double-charge on timeout.
+    const idempotencyKey = generateUUID();
+
     try {
-      // 1. Ask backend to create the subscription PaymentIntent
-      const sheetRes = await paymentsApi.createPaymentSheet();
+      // 1. Ask backend to create (or resume) the subscription PaymentIntent
+      const sheetRes = await paymentsApi.createPaymentSheet({ idempotency_key: idempotencyKey });
       const { paymentIntent, ephemeralKey, customer } = sheetRes.data;
 
       // 2. Initialise the Stripe Payment Sheet

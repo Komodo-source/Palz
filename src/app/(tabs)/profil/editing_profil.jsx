@@ -131,7 +131,7 @@ export default function ProfileEditingScreen() {
   // expo-audio hooks — recorder and player managed by component lifecycle
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingState = useAudioRecorderState(recorder);
-  const player = useAudioPlayer(recordedAudioUri || null);
+  const player = useAudioPlayer(recordedAudioUri ? { uri: recordedAudioUri } : null);
   const playerStatus = useAudioPlayerStatus(player);
 
   // Stable waveform bar heights — computed once so they don't jump on re-render
@@ -783,6 +783,36 @@ export default function ProfileEditingScreen() {
           />
         </View>
 
+        {/* ── Location Section ── */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="location-outline" size={20} color={PALETTE.rose} />
+            <Text style={styles.sectionTitle}>Ma localisation</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.locationButton}
+            onPress={getCurrentLocation}
+            disabled={isFetchingLocation}
+            activeOpacity={0.7}
+          >
+            {isFetchingLocation ? (
+              <ActivityIndicator color={PALETTE.white} size="small" />
+            ) : (
+              <>
+                <Ionicons name="location" size={18} color={PALETTE.white} />
+                <Text style={styles.locationButtonText}>
+                  {userLocation ? 'Position mise à jour !' : 'Mettre à jour ma position'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          {userLocation && (
+            <Text style={styles.locationDetail}>
+              Lat: {userLocation.latitude.toFixed(4)} · Lon: {userLocation.longitude.toFixed(4)}
+            </Text>
+          )}
+        </View>
+
         {/* ── Age Range Section ── */}
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
@@ -982,35 +1012,7 @@ export default function ProfileEditingScreen() {
           </TouchableOpacity>
         </Modal>
 
-        {/* ── Location Section ── */}
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="location-outline" size={20} color={PALETTE.rose} />
-            <Text style={styles.sectionTitle}>Ma localisation</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.locationButton}
-            onPress={getCurrentLocation}
-            disabled={isFetchingLocation}
-            activeOpacity={0.7}
-          >
-            {isFetchingLocation ? (
-              <ActivityIndicator color={PALETTE.white} size="small" />
-            ) : (
-              <>
-                <Ionicons name="location" size={18} color={PALETTE.white} />
-                <Text style={styles.locationButtonText}>
-                  {userLocation ? 'Position mise à jour !' : 'Mettre à jour ma position'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-          {userLocation && (
-            <Text style={styles.locationDetail}>
-              Lat: {userLocation.latitude.toFixed(4)} · Lon: {userLocation.longitude.toFixed(4)}
-            </Text>
-          )}
-        </View>
+
 
         {/* ── Audio Fun Fact (Premium) ── */}
         <View style={[styles.card, styles.premiumCard]}>

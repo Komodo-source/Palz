@@ -15,6 +15,7 @@ import {
   Modal,
   Linking
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -183,7 +184,9 @@ export default function GroupsScreen() {
   const [showChat, setShowChat] = useState(false);
   const [rendezvousModalVisible, setRendezvousModalVisible] = useState(false);
   const [rendezvousText, setRendezvousText] = useState('');
-  const [rendezvousTimeText, setRendezvousTimeText] = useState('');
+  const [rendezvousDateObj, setRendezvousDateObj] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [memberVotes, setMemberVotes] = useState({}); // { [memberId]: true | false }
   const [submittingMemberVotes, setSubmittingMemberVotes] = useState(false);
   const [openingDm, setOpeningDm] = useState(null); // memberId being loaded
@@ -417,7 +420,9 @@ export default function GroupsScreen() {
 
   const openRendezvousModal = () => {
     setRendezvousText(group?.rendezvous_location || '');
-    setRendezvousTimeText(group?.rendezvous_time ? formatDate(group.rendezvous_time) + ' ' + formatTime(group.rendezvous_time) : '');
+    setRendezvousDateObj(group?.rendezvous_time ? new Date(group.rendezvous_time) : null);
+    setShowDatePicker(false);
+    setShowTimePicker(false);
     setRendezvousModalVisible(true);
   };
 
@@ -425,12 +430,7 @@ export default function GroupsScreen() {
     const location = rendezvousText.trim();
     if (!location || !group?.id) return;
     setRendezvousModalVisible(false);
-    // Parse time: expect "DD/MM/YYYY HH:MM" or similar
-    let parsedTime = null;
-    if (rendezvousTimeText.trim()) {
-      const t = new Date(rendezvousTimeText.trim());
-      if (!isNaN(t.getTime())) parsedTime = t.toISOString();
-    }
+    const parsedTime = rendezvousDateObj ? rendezvousDateObj.toISOString() : null;
     try {
       await groupsApi.setRendezvous(group.id, location, parsedTime);
       await fetchGroup();
@@ -907,14 +907,15 @@ export default function GroupsScreen() {
                     {isVoting
                       ? <ActivityIndicator size="small" color={hasVoted ? '#fff' : PALETTE.rose} />
                       : <>
-                            <Ionicons name="heart-outline" style={styles.activityVoteEmoji} size={20} color={PALETTE.rose}/>
+                          <Ionicons
+                            name={hasVoted ? 'heart' : 'heart-outline'}
+                            size={18}
+                            color={hasVoted ? '#fff' : PALETTE.rose}
+                          />
                           {voteCount > 0 && (
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, }}>
-                              <Ionicons name="heart" size={20} color={PALETTE.white} />
-                              <Text style={[styles.activityVoteCount, { color: hasVoted ? '#fff' : colors.textSecondary }]}>
-                                {voteCount}
-                              </Text>
-                            </View>
+                            <Text style={[styles.activityVoteCount, { color: hasVoted ? '#fff' : PALETTE.rose }]}>
+                              {voteCount}
+                            </Text>
                           )}
                         </>
                     }
@@ -1171,16 +1172,91 @@ export default function GroupsScreen() {
             returnKeyType="next"
           />
           <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>Date et heure (optionnel)</Text>
-          <TextInput
-            style={[styles.modalInput, { backgroundColor: colors.backgroundElement, color: colors.text, borderColor: colors.backgroundSelected }]}
-            placeholder="Ex: 2026-06-01 15:00"
-            placeholderTextColor={colors.textSecondary}
-            value={rendezvousTimeText}
-            onChangeText={setRendezvousTimeText}
-            maxLength={30}
-            returnKeyType="done"
-            onSubmitEditing={handleSetRendezvous}
-          />
+          <View style={styles.dateTimeRow}>
+            <TouchableOpacity
+              style={[styles.dateTimeBtn, { backgroundColor: colors.backgroundElement, borderColor: showDatePicker ? PALETTE.rose : colors.backgroundSelected }]}
+              onPress={() => { setShowTimePicker(false); setShowDatePicker((v) => !v); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="calendar-outline" size={16} color={PALETTE.rose} />
+              <Text style={[styles.dateTimeBtnText, { color: rendezvousDateObj ? colors.text : colors.textSecondary }]}>
+                {rendezvousDateObj ? formatDate(rendezvousDateObj.toISOString()) : 'Date'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateTimeBtn, { backgroundColor: colors.backgroundElement, borderColor: showTimePicker ? PALETTE.rose : colors.backgroundSelected, opacity: rendezvousDateObj ? 1 : 0.5 }]}
+              onPress={() => { if (!rendezvousDateObj) return; setShowDatePicker(false); setShowTimePicker((v) => !v); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="time-outline" size={16} color={PALETTE.rose} />
+              <Text style={[styles.dateTimeBtnText, { color: rendezvousDateObj ? colors.text : colors.textSecondary }]}>
+                {rendezvousDateObj ? formatTime(rendezvousDateObj.toISOString()) : 'Heure'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showDatePicker && (
+            <View style={styles.pickerContainer}>
+              <DateTimePicker
+                value={rendezvousDateObj || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                minimumDate={new Date()}
+                onChange={(event, selectedDate) => {
+                  if (Platform.OS !== 'ios') setShowDatePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (selectedDate) {
+                    const base = rendezvousDateObj || new Date();
+                    const d = new Date(selectedDate);
+                    d.setHours(base.getHours(), base.getMinutes(), 0, 0);
+                    setRendezvousDateObj(d);
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setShowDatePicker(false)} activeOpacity={0.7}>
+                  <Text style={[styles.pickerDoneText, { color: PALETTE.rose }]}>OK</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {showTimePicker && (
+            <View style={styles.pickerContainer}>
+              <DateTimePicker
+                value={rendezvousDateObj || new Date()}
+                mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(event, selectedDate) => {
+                  if (Platform.OS !== 'ios') setShowTimePicker(false);
+                  if (event.type === 'dismissed') return;
+                  if (selectedDate) {
+                    const base = rendezvousDateObj || new Date();
+                    const d = new Date(base);
+                    d.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+                    setRendezvousDateObj(d);
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setShowTimePicker(false)} activeOpacity={0.7}>
+                  <Text style={[styles.pickerDoneText, { color: PALETTE.rose }]}>OK</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {rendezvousDateObj && (
+            <TouchableOpacity
+              onPress={() => { setRendezvousDateObj(null); setShowDatePicker(false); setShowTimePicker(false); }}
+              activeOpacity={0.7}
+              style={{ alignSelf: 'center', marginBottom: Spacing.two }}
+            >
+              <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Effacer la date</Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={[styles.modalBtn, styles.modalBtnCancel]}
@@ -2038,6 +2114,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 15,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
+  },
+  dateTimeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 14,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two + 2,
+    borderWidth: 1,
+  },
+  dateTimeBtnText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  pickerContainer: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: Spacing.two,
+  },
+  pickerDoneBtn: {
+    alignItems: 'flex-end',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
+  pickerDoneText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
 

@@ -16,8 +16,7 @@ const API_BASE = USE_LOCAL
   ? `http://${LOCAL_HOST}:3000/api`
   : `${PROD_HOST}/api`;
 
-// Security key for backend DB access — set via env or hardcode for dev
-const API_SECRET_KEY = process.env.EXPO_PUBLIC_API_KEY || 'palz-dev-key-change-in-production';
+const API_SECRET_KEY = process.env.EXPO_PUBLIC_API_KEY || '';
 
 // Debug mode: set to true to see detailed backend error messages
 const DEBUG_MODE = process.env.EXPO_PUBLIC_DEBUG === 'true';
@@ -67,9 +66,10 @@ api.interceptors.response.use(
 
 // ── Auth ──
 export const authApi = {
-  signup: (data) => api.post('/auth/signup', data),
-  login: (data) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me'),
+  signup:     (data)    => api.post('/auth/signup', data),
+  login:      (data)    => api.post('/auth/login', data),
+  logout:     ()        => api.post('/auth/logout'),
+  me:         ()        => api.get('/auth/me'),
   googleAuth: (idToken) => api.post('/auth/google', { idToken }),
 };
 
@@ -84,8 +84,7 @@ export const usersApi = {
 };
 
 // ── Upload ──
-// Supabase storage public URL base
-const SUPABASE_BASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://kcglwtoegceicruwmxzo.supabase.co';
+const SUPABASE_BASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const SUPABASE_STORAGE_URL = `${SUPABASE_BASE_URL}/storage/v1/object/public`;
 
 /**
@@ -306,7 +305,7 @@ export const constantDataApi = {
 
 // ── Payments ──
 export const paymentsApi = {
-  createPaymentSheet: () => api.post('/payments/create-payment-sheet'),
+  createPaymentSheet: (data = {}) => api.post('/payments/create-payment-sheet', data),
   confirm: (paymentIntentId) => api.post('/payments/confirm', { payment_intent_id: paymentIntentId }),
   getStatus: () => api.get('/payments/status'),
   cancel: () => api.post('/payments/cancel'),

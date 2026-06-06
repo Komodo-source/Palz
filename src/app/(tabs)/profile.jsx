@@ -282,7 +282,7 @@ const formatDate = (dob) => {
           <Text style={styles.statValue}>
             {numberRelation !== null ? animRelation : '—'}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Relations</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Copines</Text>
         </Animated.View>
         <Animated.View entering={FadeInDown.delay(160).duration(400).springify().damping(14)} style={[styles.statBox, { backgroundColor: colors.backgroundElement }]}>
           <Text style={styles.statValue}>

@@ -135,7 +135,7 @@ export default function ListSettings() {
     const storeUrl = Platform.select({
       ios: 'itms-apps://itunes.apple.com/app/palz',
       android: 'market://details?id=com.palzapp.palz',
-      default: 'https://palzapp.com',
+      default: 'https://copines-app.fr/',
     });
     try {
       await Linking.openURL(storeUrl);
@@ -241,12 +241,12 @@ export default function ListSettings() {
   const handleReportProblem = () => {
     Alert.alert(
       'Signaler un problème',
-      'Tu peux nous écrire à palzapp@support.com pour toute question ou signalement.',
+      'Tu peux nous écrire à support@copines-app.fr pour toute question ou signalement.',
       [
         {
           text: 'Nous écrire',
           onPress: async () => {
-            const url = 'mailto:palzapp@support.com?subject=Signaler%20un%20problème%20Palz';
+            const url = 'mailto:support@copines-app.fr?subject=Signaler%20un%20problème%20Palz';
             try {
               await Linking.openURL(url);
             } catch {
@@ -278,12 +278,12 @@ export default function ListSettings() {
   const handleContactUs = () => {
     Alert.alert(
       'Nous contacter',
-      'Écris-nous à palzapp@support.com ou via nos réseaux sociaux.',
+      'Écris-nous à support@copines-app.fr ou via nos réseaux sociaux.',
       [
         {
           text: 'Nous écrire',
           onPress: async () => {
-            const url = 'mailto:palzapp@support.com?subject=Contact%20Palz';
+            const url = 'mailto:support@copines-app.fr?subject=Contact%20Palz';
             try {
               await Linking.openURL(url);
             } catch {

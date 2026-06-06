@@ -276,7 +276,7 @@ export default function MessagesScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Vos Copines</Text>
         {conversations.length > 0 && (
           <View style={[styles.countBadge, { backgroundColor: PALETTE.rosePale }]}>
             <Text style={styles.countText}>{conversations.length}</Text>
@@ -290,7 +290,7 @@ export default function MessagesScreen() {
             <Ionicons name="chatbubble-ellipses" size={40} color={PALETTE.rose} />
           </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Pas encore de messages
+            Pas encore de copines
           </Text>
           <Text style={[styles.emptyHint, { color: colors.textSecondary }]}>
             Swipe des profils et fais des matchs pour commencer à discuter !

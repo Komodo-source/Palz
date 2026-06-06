@@ -85,6 +85,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Révoquer le token côté serveur avant de le supprimer localement
+    try { await authApi.logout(); } catch { /* si le token est déjà invalide, on continue */ }
     await storage.removeItem('auth_token');
     await storage.removeItem('auth_user');
     setToken(null);

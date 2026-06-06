@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { usersApi, swipesApi, wallApi, messagesApi, getStorageUrl } from '@/services/api';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { getProfileImages, parseDbJson } from '@/utils/parsers';
@@ -53,6 +54,49 @@ function parseInterests(user) {
     sports: toStringArray(user.sports),
     hobbies: toStringArray(user.hobbies),
   };
+}
+
+function VoiceNotePlayer({ uri, colors }) {
+  const player = useAudioPlayer(uri ? { uri } : null);
+  const status = useAudioPlayerStatus(player);
+
+  const toggle = async () => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      player.play();
+    }
+  };
+
+  return (
+    <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="mic-outline" size={16} color={PALETTE.rose} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Fun fact vocale</Text>
+      </View>
+      <TouchableOpacity style={styles.voiceRow} onPress={toggle} activeOpacity={0.8}>
+        <View style={[styles.voicePlayBtn, status.playing && styles.voicePlayBtnActive]}>
+          <Ionicons name={status.playing ? 'pause' : 'play'} size={18} color="#fff" />
+        </View>
+        <View style={styles.voiceWave}>
+          {Array.from({ length: 28 }, (_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.voiceBar,
+                { height: 4 + (i % 5) * 4 + (i % 3) * 2 },
+                status.playing && { backgroundColor: PALETTE.rose },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[styles.voiceLabel, { color: colors.textSecondary }]}>
+          {status.playing ? 'En écoute…' : 'Écouter'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 function cityOnly(loc) {
@@ -454,6 +498,11 @@ const lifestyleBadges = [
           </View>
         )}
 
+        {/* ── Fun fact vocale ── */}
+        {user.voice_fun_fact ? (
+          <VoiceNotePlayer uri={getStorageUrl(user.voice_fun_fact)} colors={colors} />
+        ) : null}
+
         {/* ── Photos du mur ── */}
         {wallPosts.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
@@ -645,7 +694,19 @@ const styles = StyleSheet.create({
   labelGroup: { marginBottom: 10 },
   labelGroupTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
 
-  // ── Voice ice breaker ──
+  // ── Voice note player ──
+  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  voicePlayBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: PALETTE.rose,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  voicePlayBtnActive: { backgroundColor: '#CC3D5E' },
+  voiceWave: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, overflow: 'hidden' },
+  voiceBar: { width: 3, backgroundColor: 'rgba(255,143,163,0.45)', borderRadius: 2 },
+  voiceLabel: { fontSize: 13, fontWeight: '600', flexShrink: 0 },
+
   // ── Wall post grid ──
   wallGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   wallThumb: {
