@@ -393,7 +393,7 @@ const formatDate = (dob) => {
           </View>
           {!user?.is_premium && (
             <TouchableOpacity
-              onPress={() => router.push('/(tabs)/settings/list_settings')}
+              onPress={() => router.push('/(tabs)/profil/payement_page')}
               style={styles.upgradeBtn}
               activeOpacity={0.8}
             >
@@ -444,7 +444,7 @@ const formatDate = (dob) => {
 
 
       <Text style={[styles.version, { color: colors.textSecondary }]}>
-        Palz v1.0.0 · Fait avec amour
+        Copines v1.0.0 · Fait avec amour
       </Text>
     </ScrollView>
 
@@ -462,7 +462,7 @@ const formatDate = (dob) => {
             <Text style={styles.recapIconEmoji}>📊</Text>
           </View>
           <Text style={styles.recapTitle}>Bilan de ta semaine ✨</Text>
-          <Text style={styles.recapSub}>Voici ton recap d'amitié cette semaine sur Palz !</Text>
+          <Text style={styles.recapSub}>Voici ton recap d'amitié cette semaine sur Copines !</Text>
 
           <View style={styles.recapStats}>
             {[
@@ -494,7 +494,7 @@ const formatDate = (dob) => {
           <View style={styles.recapBtnRow}>
             <TouchableOpacity
               style={styles.recapShareBtn}
-              onPress={() => Share.share({ message: `Mon bilan Palz cette semaine ✨\n💬 ${weekStats?.messages ?? 0} conversations actives\n🎯 ${weekStats?.interests ?? 0} connexions\n🎉 ${weekStats?.events ?? 0} événements rejoints\nVibe fort : "${getTopVibe(user)}" 🔥\n#Palz` })}
+              onPress={() => Share.share({ message: `Mon bilan Copines cette semaine ✨\n💬 ${weekStats?.messages ?? 0} conversations actives\n🎯 ${weekStats?.interests ?? 0} connexions\n🎉 ${weekStats?.events ?? 0} événements rejoints\nVibe fort : "${getTopVibe(user)}" 🔥\n#Copines` })}
               activeOpacity={0.8}
             >
               <Ionicons name="share-outline" size={18} color="#818CF8" />

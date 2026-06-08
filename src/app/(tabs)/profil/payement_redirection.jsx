@@ -22,7 +22,7 @@ export default function PayementRedirection() {
 
       <Text style={styles.title}>Paiement confirmé !</Text>
       <Text style={styles.sub}>
-        Ton abonnement Palz Premium est maintenant actif. Profite de tous tes avantages !
+        Ton abonnement Copines Premium est maintenant actif. Profite de tous tes avantages !
       </Text>
 
       <View style={styles.badgeRow}>

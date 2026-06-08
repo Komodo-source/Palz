@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
 import { paymentsApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
+import ConfettiCannon from '@/components/ConfettiCannon';
 
 // RFC 4122 UUID v4 — uses Hermes crypto.randomUUID() when available (RN 0.70+)
 function generateUUID() {
@@ -72,13 +73,18 @@ export default function PayementPage() {
     const idempotencyKey = generateUUID();
 
     try {
-      // 1. Ask backend to create (or resume) the subscription PaymentIntent
       const sheetRes = await paymentsApi.createPaymentSheet({ idempotency_key: idempotencyKey });
-      const { paymentIntent, ephemeralKey, customer } = sheetRes.data;
+      const { paymentIntent, ephemeralKey, customer, activated } = sheetRes.data;
 
-      // 2. Initialise the Stripe Payment Sheet
+      // Subscription was activated immediately (trial / auto-charge / $0)
+      if (activated) {
+        setIsPremium(true);
+        setStatus('success');
+        return;
+      }
+
       const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'Palz',
+        merchantDisplayName: 'Copines',
         customerId: customer,
         customerEphemeralKeySecret: ephemeralKey,
         paymentIntentClientSecret: paymentIntent,
@@ -113,7 +119,6 @@ export default function PayementPage() {
         return;
       }
 
-      // 4. Verify server-side and activate premium
       const piId = paymentIntent.split('_secret_')[0]; // extract PI id from client secret
       await paymentsApi.confirm(piId);
 
@@ -195,7 +200,9 @@ export default function PayementPage() {
   // ── Payment success state ────────────────────────────────────────────────
   if (status === 'success') {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <View style={{ flex: 1 }}>
+        <ConfettiCannon firing />
+        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         <View style={styles.successWrap}>
           <View style={styles.successCircle}>
             <Text style={styles.successEmoji}>🎉</Text>
@@ -225,7 +232,8 @@ export default function PayementPage() {
             <Text style={styles.buttonText}>Commencer</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     );
   }
 
@@ -246,7 +254,7 @@ export default function PayementPage() {
         <View style={styles.starBadge}>
           <Ionicons name="star" size={32} color={PALETTE.gold} />
         </View>
-        <Text style={styles.title}>Palz Premium</Text>
+        <Text style={styles.title}>Copines Premium</Text>
         <Text style={styles.headerSub}>Toutes les fonctionnalités, sans limite</Text>
       </View>
 

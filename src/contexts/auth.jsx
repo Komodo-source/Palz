@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import storage from '@/services/storage';
 import { authApi, setOnUnauthorized } from '@/services/api';
 import { registerForPushNotifications } from '@/services/notifications';
@@ -10,44 +10,90 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Register 401 callback so the API interceptor can clear auth state mid-session
+  // onUnauthorized only handles mid-session 401s (after initial load completes)
+  const initialLoadDone = useRef(false);
+  const reAuthRef = useRef(false);
   useEffect(() => {
-    setOnUnauthorized(() => {
+    setOnUnauthorized(async () => {
+      if (!initialLoadDone.current) return; // loadSession handles startup auth
+      if (reAuthRef.current) return;
+      reAuthRef.current = true;
+      try {
+        const credsStr = await storage.getItem('remembered_credentials');
+        if (credsStr) {
+          const { email, password } = JSON.parse(credsStr);
+          const res = await authApi.login({ email, password });
+          const { user: newUser, token: newToken } = res.data;
+          await storage.setItem('auth_token', newToken);
+          await storage.setItem('auth_user', JSON.stringify(newUser));
+          setToken(newToken);
+          setUser(newUser);
+          return;
+        }
+      } catch {
+        // silent — fall through to logout
+      } finally {
+        reAuthRef.current = false;
+      }
+      try { await storage.removeItem('auth_token'); } catch {}
+      try { await storage.removeItem('auth_user'); } catch {}
       setToken(null);
       setUser(null);
     });
   }, []);
 
   const loadSession = async () => {
-  try {
-    const savedToken = await storage.getItem('auth_token');
-    const savedUser = await storage.getItem('auth_user');
+    try {
+      const savedToken = await storage.getItem('auth_token');
+      const savedUser = await storage.getItem('auth_user');
+      let sessionValid = false;
 
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      if (savedToken && savedUser) {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
 
-      try {
-        const res = await Promise.race([
-          authApi.me(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), 5000)
-          ),
-        ]);
-        setUser(res.data.user);
-        await storage.setItem('auth_user', JSON.stringify(res.data.user));
-      } catch {
-        await storage.removeItem('auth_token');
-        await storage.removeItem('auth_user');
-        setToken(null);
-        setUser(null);
+        try {
+          const res = await Promise.race([
+            authApi.me(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('timeout')), 5000)
+            ),
+          ]);
+          setUser(res.data.user);
+          await storage.setItem('auth_user', JSON.stringify(res.data.user));
+          sessionValid = true;
+        } catch {
+          await storage.removeItem('auth_token');
+          await storage.removeItem('auth_user');
+          setToken(null);
+          setUser(null);
+        }
       }
+
+      if (!sessionValid) {
+        try {
+          const credsStr = await storage.getItem('remembered_credentials');
+          if (credsStr) {
+            const { email, password } = JSON.parse(credsStr);
+            const res = await authApi.login({ email, password });
+            const { user: newUser, token: newToken } = res.data;
+            await storage.setItem('auth_token', newToken);
+            await storage.setItem('auth_user', JSON.stringify(newUser));
+            setToken(newToken);
+            setUser(newUser);
+            registerForPushNotifications().catch(() => {});
+          }
+        } catch {
+          await storage.removeItem('remembered_credentials');
+        }
+      }
+    } catch (err) {
+      console.error('Session load error:', err);
+    } finally {
+      initialLoadDone.current = true;
+      setIsLoading(false);
     }
-  } catch (err) {
-    console.error('Session load error:', err);
-  } finally {
-    setIsLoading(false);
-  }  };
+  };
 
   // Check for existing session on mount
   useEffect(() => {

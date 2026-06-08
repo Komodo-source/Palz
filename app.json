@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Palz",
-    "slug": "Palz",
+    "name": "Copines",
+    "slug": "Copines",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "palz",
+    "scheme": "copines",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -21,7 +21,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.kr0k0.Palz"
+      "package": "com.kr0k0.copines"
     },
     "web": {
       "output": "static",

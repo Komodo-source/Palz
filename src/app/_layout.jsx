@@ -41,8 +41,8 @@ function RootNavigator() {
     });
 
     return () => {
-      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
-      if (notifListener.current) Notifications.removeNotificationSubscription(notifListener.current);
+      responseListener.current?.remove();
+      notifListener.current?.remove();
     };
   }, [router]);
 

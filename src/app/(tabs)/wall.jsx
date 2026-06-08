@@ -21,7 +21,7 @@ import { wallApi, uploadApi, messagesApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
-import { parseDbJson, safeStr } from '@/utils/parsers';
+import { parseDbJson, safeStr, getProfileImages } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 
 import { WallSkeleton } from '@/components/Skeleton';
@@ -103,7 +103,7 @@ export default function WallScreen() {
   const [themeModal, setThemeModal] = useState(false);
   const [viewerPhoto, setViewerPhoto] = useState(null);
   const [countdown, setCountdown] = useState(null);
-  const hasShownTheme = useRef(false);
+  const lastShownThemeId = useRef(null);
   const countdownInterval = useRef(null);
 
   const fetchWall = useCallback(async () => {
@@ -114,15 +114,12 @@ export default function WallScreen() {
       setPosts(res.data?.posts ?? []);
       if (newTheme) {
         setCountdown(getThemeCountdown(newTheme.ends_at));
-        if (!hasShownTheme.current) {
-          hasShownTheme.current = true;
+        if (lastShownThemeId.current !== newTheme.id) {
+          lastShownThemeId.current = newTheme.id;
           try {
-            const value = await AsyncStorage.getItem('has_seen_modal');
-            if (value !== null) {
-              setThemeModal(false);
-            } else {
-              setThemeModal(true);
-            }
+            const key = `has_seen_modal_${newTheme.id}`;
+            const value = await AsyncStorage.getItem(key);
+            setThemeModal(value === null);
           } catch (e) {
             console.error("Error reading from AsyncStorage:", e);
             setThemeModal(true);
@@ -232,7 +229,15 @@ export default function WallScreen() {
     setUploading(true);
     try {
       const uploadResult = await uploadApi.uploadImage({ uri: asset.uri, fileName: asset.fileName || `wall_${Date.now()}.jpg`, mimeType: asset.mimeType || 'image/jpeg' });
-      await wallApi.createPost([uploadResult.url]);
+      const wall = await wallApi.createPost([uploadResult.url]);
+      if(wall?.response?.nsfw){
+        Alert.alert("Aïe", "Votre photos contient des éléments explicites\nAttention ce type de post peut mener à des sanctions\nPour tout faux positif veuillez contacter support@copines-app.fr", [{
+          text: "OK",
+          }
+      ])
+      setUploading(false);
+      return ;
+      }
       await fetchWall();
       snackbar.success('Photo postée sur la Toile 🌸', 2500);
     } catch (err) {
@@ -365,10 +370,12 @@ export default function WallScreen() {
 
   const dismissModal = async () => {
     setThemeModal(false);
-    try {
-      await AsyncStorage.setItem('has_seen_modal', 'true');
-    } catch (e) {
-      console.error('Error saving to AsyncStorage:', e);
+    if (theme?.id) {
+      try {
+        await AsyncStorage.setItem(`has_seen_modal_${theme.id}`, 'true');
+      } catch (e) {
+        console.error('Error saving to AsyncStorage:', e);
+      }
     }
   };
 
@@ -483,7 +490,7 @@ export default function WallScreen() {
               <Ionicons name="sparkles" size={44} color={PALETTE.rose} />
             </View>
             <Text style={styles.themeModalEyebrow}>Thème du moment ✨</Text>
-            <Text style={styles.themeModalTitle}>{theme?.title || ''}</Text>
+            <Text style={styles.themeModalTitle}>{safeStr(theme?.title)}</Text>
             {countdown && (
               <View style={styles.themeModalCountdown}>
                 <Ionicons name="hourglass-outline" size={14} color={PALETTE.rose} />
@@ -491,7 +498,7 @@ export default function WallScreen() {
               </View>
             )}
             <Text style={styles.themeModalHint}>
-              Poste une photo qui correspond au thème et rencontre de nouvelles Palz !
+              Poste une photo qui correspond au thème et rencontre de nouvelles copines !
             </Text>
             <TouchableOpacity
               style={styles.themeModalPostBtn}
@@ -650,6 +657,7 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   themeModalBox: { width: '100%', backgroundColor: '#fff', borderRadius: 28, padding: 28, alignItems: 'center', gap: 10 },
   themeModalIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: PALETTE.rosePale, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  themeModalEyebrow: { fontSize: 13, fontWeight: '600', color: PALETTE.rose },
   themeModalTitle: { fontSize: 22, fontWeight: '800', color: '#4A3728', textAlign: 'center', lineHeight: 28 },
   themeModalCountdown: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: PALETTE.rosePale, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   themeModalCountdownText: { fontSize: 13, fontWeight: '700', color: PALETTE.rose },

@@ -51,9 +51,7 @@ api.interceptors.response.use(
     if (error.response) {
       const status = error.response.status;
       if (status === 401) {
-        await storage.removeItem('auth_token');
-        await storage.removeItem('auth_user');
-        if (onUnauthorized) onUnauthorized();
+        if (onUnauthorized) Promise.resolve(onUnauthorized()).catch(() => {});
       }
       // Attach a readable message for catch blocks to display
       error.displayMessage = error.response.data?.error || `Erreur ${status}`;
@@ -262,6 +260,12 @@ export const groupsApi = {
   sendMessage: (data) => api.post('/groups/message/send', data),
   setRendezvous: (weeklyGroupId, location, time) =>
     api.put('/groups/rendezvous', { weekly_group_id: weeklyGroupId, location, time }),
+  suggestRendezvous: (weeklyGroupId, location, time) =>
+    api.post('/groups/rendezvous-suggest', { weekly_group_id: weeklyGroupId, location, time }),
+  likeRendezvous: (weeklyGroupId, suggestionId) =>
+    api.post(`/groups/${weeklyGroupId}/rendezvous-like/${suggestionId}`),
+  reportGroup: (weeklyGroupId, reason) =>
+    api.post(`/groups/${weeklyGroupId}/report`, { reason }),
   submitMemberVotes: (weeklyGroupId, votes) =>
     api.post('/groups/member-vote', { weekly_group_id: weeklyGroupId, votes }),
   getMemberVotes: (weeklyGroupId) => api.get(`/groups/${weeklyGroupId}/member-votes`),

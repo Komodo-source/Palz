@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -281,6 +282,13 @@ export default function ProfileEditingScreen() {
         fileName: `photo.${ext}`,
         mimeType,
       });
+
+      if (url?.reposnse?.nsfw){
+        Alert.alert("Aïe", "Votre photos contient des éléments explicites\nAttention ce type de post peut mener à des sanctions\nPour tout faux positif veuillez contacter support@copines-app.fr", [{
+            text: "OK",
+            }
+        ])
+      }
 
       if (isMounted.current) {
         setPhotos((prev) => [...prev, {
@@ -1083,32 +1091,26 @@ export default function ProfileEditingScreen() {
                     <Ionicons name="trash-outline" size={16} color={PALETTE.rose} />
                   </TouchableOpacity>
                 </View>
-              ) : isRecording ? (
-                <View style={styles.recordingContainer}>
-                  <View style={styles.recordingIndicator}>
-                    <View style={styles.recordingDot} />
-                  </View>
-                  <Text style={styles.recordingText}>
-                    Enregistrement... {formatDuration(Math.floor(recordingState.durationMillis / 1000))}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.stopButton}
-                    onPress={stopRecording}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="stop" size={14} color={PALETTE.white} />
-                    <Text style={styles.stopButtonText}> Stop</Text>
-                  </TouchableOpacity>
-                </View>
               ) : (
-                <TouchableOpacity
-                  style={styles.recordButton}
-                  onPress={startRecording}
-                  activeOpacity={0.7}
+                <Pressable
+                  style={[styles.recordButton, isRecording && styles.recordButtonActive]}
+                  onPressIn={startRecording}
+                  onPressOut={stopRecording}
                 >
-                  <Ionicons name="mic" size={24} color={PALETTE.white} />
-                  <Text style={styles.recordButtonText}>Appuyer pour enregistrer</Text>
-                </TouchableOpacity>
+                  {isRecording ? (
+                    <>
+                      <View style={styles.recordingDot} />
+                      <Text style={styles.recordButtonText}>
+                        {formatDuration(Math.floor(recordingState.durationMillis / 1000))} · Relâcher pour arrêter
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="mic" size={24} color={PALETTE.white} />
+                      <Text style={styles.recordButtonText}>Maintenir pour enregistrer</Text>
+                    </>
+                  )}
+                </Pressable>
               )}
               {isUploadingAudio && (
                 <View style={styles.uploadingOverlay}>
@@ -1431,6 +1433,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+
+  recordButtonActive: {
+    backgroundColor: '#c0392b',
   },
 
   recordButtonText: {

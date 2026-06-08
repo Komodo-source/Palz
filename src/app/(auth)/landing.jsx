@@ -85,9 +85,6 @@ export default function LandingScreen() {
         </Animated.View>
       </View>
 
-      {/* Subtle dark veil over the whole image */}
-      <View style={styles.veil} />
-
       {/* Strong gradient at the bottom for text legibility */}
       <View style={styles.bottomGradient} />
 
@@ -100,7 +97,7 @@ export default function LandingScreen() {
         {/* Logo */}
         <View style={styles.topBar}>
           <View style={styles.logoPill}>
-            <Text style={styles.logoText}>Palz</Text>
+            <Text style={styles.logoText}>Copines</Text>
           </View>
         </View>
 
@@ -147,17 +144,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#180810',
   },
-  veil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 5, 12, 0.28)',
-  },
   bottomGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: height * 0.56,
-    backgroundColor: 'rgba(12, 4, 10, 0.78)',
   },
   content: {
     flex: 1,

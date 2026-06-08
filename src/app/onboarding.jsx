@@ -666,7 +666,7 @@ export default function OnboardingScreen() {
 
           <Text style={vStyles.contact}>
             Un problème ou une question ?{'\n'}
-            <Text style={{ color: PALETTE.rose, fontWeight: '600' }}>support@palz.fr</Text>
+            <Text style={{ color: PALETTE.rose, fontWeight: '600' }}>support@copines-app.fr</Text>
             {'  '}— nous répondons rapidement 🌸
           </Text>
         </ScrollView>
@@ -1149,7 +1149,7 @@ export default function OnboardingScreen() {
             <View style={[styles.iconCircle, { backgroundColor: PALETTE.rosePale, width: 100, height: 100, borderRadius: 50 }]}>
               <Ionicons name="sparkles" size={48} color={PALETTE.rose} />
             </View>
-            <Text style={styles.resultTitle}>Bienvenue sur Palz !</Text>
+            <Text style={styles.resultTitle}>Bienvenue sur Copines !</Text>
             <Text style={styles.resultSubtitle}>
               Ton profil est tout prêt. On te trouve des amis géniaux !
             </Text>
@@ -1303,7 +1303,7 @@ function RelationshipStep({ options, selected, onSelect }) {
             <Ionicons name="heart-circle" size={32} color={PALETTE.rose} />
           </View>
           <Text style={styles.stepTitle}>Type de relation</Text>
-          <Text style={styles.stepSubtitle}>Que recherches-tu sur Palz ?</Text>
+          <Text style={styles.stepSubtitle}>Que recherches-tu sur Copines ?</Text>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={PALETTE.rose} />

@@ -72,13 +72,14 @@ export default function LoginScreen() {
 
       if (rememberMe) {
         await storage.setItem('remembered_email', email.trim());
+        await storage.setItem('remembered_credentials', JSON.stringify({ email: email.trim(), password }));
       } else {
         await storage.removeItem('remembered_email');
+        await storage.removeItem('remembered_credentials');
       }
 
       router.replace('/(tabs)');
     } catch (err) {
-      console.log(err);
       const msg = err.response?.data?.error || 'Connexion échouée. Réessaie.';
       Alert.alert('Erreur', msg);
     } finally {
@@ -97,9 +98,7 @@ export default function LoginScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>Palz</Text>
-          </View>
+
           <Text style={styles.subtitle}>
             Heureuse de te revoir ! Connecte-toi pour retrouver tes amis.
           </Text>

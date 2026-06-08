@@ -97,7 +97,14 @@ function GroupVoiceBubble({ uri, isMine, colors, isDark, time }) {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const toggle = () => { if (isPlaying) player.pause(); else player.play(); };
+  const toggle = async () => {
+    if (isPlaying) {
+      player.pause();
+    } else {
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      player.play();
+    }
+  };
   const activeColor = isMine ? '#fff' : PALETTE.rose;
   const inactiveColor = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
 
@@ -273,13 +280,42 @@ export default function GroupsScreen() {
     try {
       await groupsApi.generate();
       await fetchGroup();
-      snackbar.success('✨ Cercle créé ! Découvre tes nouvelles Palz !', 3000);
+      snackbar.success('✨ Cercle créé ! Découvre tes nouvelles copines !', 3000);
     } catch (err) {
       const msg = err.response?.data?.error || 'Impossible de créer un groupe.';
       Alert.alert('Erreur', msg);
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleReportGroup = () => {
+    if (!group?.id) return;
+    const reasons = [
+      'Comportement inapproprié',
+      'Harcèlement ou intimidation',
+      'Contenu offensant',
+      'Spam ou arnaque',
+      'Autre',
+    ];
+    Alert.alert(
+      'Signaler le groupe',
+      'Pourquoi veux-tu signaler ce groupe ?',
+      [
+        ...reasons.map((reason) => ({
+          text: reason,
+          onPress: async () => {
+            try {
+              await groupsApi.reportGroup(group.id, reason);
+              snackbar.success('Signalement envoyé. Merci ! ✨', 2500);
+            } catch {
+              Alert.alert('Erreur', 'Impossible d\'envoyer le signalement.');
+            }
+          },
+        })),
+        { text: 'Annuler', style: 'cancel' },
+      ]
+    );
   };
 
   const handleLeave = () => {
@@ -360,14 +396,14 @@ export default function GroupsScreen() {
       return;
     }
     try {
-      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
       setIsRecordingVoice(true);
       recordTimerRef.current = setTimeout(() => stopGroupRecording(), 60000);
     } catch (err) {
       console.error('Start recording error:', err);
-      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
     }
   };
 
@@ -376,7 +412,7 @@ export default function GroupsScreen() {
     setIsRecordingVoice(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       const uri = recorder.uri;
       if (uri) await sendGroupVoiceMessage(uri);
     } catch (err) {
@@ -389,7 +425,7 @@ export default function GroupsScreen() {
     setIsRecordingVoice(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     } catch (_) {}
   };
 
@@ -419,8 +455,8 @@ export default function GroupsScreen() {
   };
 
   const openRendezvousModal = () => {
-    setRendezvousText(group?.rendezvous_location || '');
-    setRendezvousDateObj(group?.rendezvous_time ? new Date(group.rendezvous_time) : null);
+    setRendezvousText('');
+    setRendezvousDateObj(null);
     setShowDatePicker(false);
     setShowTimePicker(false);
     setRendezvousModalVisible(true);
@@ -432,11 +468,44 @@ export default function GroupsScreen() {
     setRendezvousModalVisible(false);
     const parsedTime = rendezvousDateObj ? rendezvousDateObj.toISOString() : null;
     try {
-      await groupsApi.setRendezvous(group.id, location, parsedTime);
+      await groupsApi.suggestRendezvous(group.id, location, parsedTime);
       await fetchGroup();
     } catch (err) {
       console.error('Set rendezvous error:', err);
-      Alert.alert('Erreur', 'Impossible de définir le rendez-vous.');
+      Alert.alert('Erreur', 'Impossible de proposer le rendez-vous.');
+    }
+  };
+
+  const handleLikeRendezvous = async (suggestionId) => {
+    if (!group?.id) return;
+    const suggestions = group.rendezvous_suggestions || [];
+    const idx = suggestions.findIndex((s) => s.id === suggestionId);
+    if (idx === -1) return;
+    const alreadyLiked = (suggestions[idx].likes || []).includes(currentUser?.id);
+    // Optimistic update
+    setGroup((prev) => {
+      const updated = [...(prev.rendezvous_suggestions || [])];
+      const likes = updated[idx].likes || [];
+      updated[idx] = {
+        ...updated[idx],
+        likes: alreadyLiked ? likes.filter((id) => id !== currentUser?.id) : [...likes, currentUser?.id],
+      };
+      return { ...prev, rendezvous_suggestions: updated };
+    });
+    try {
+      await groupsApi.likeRendezvous(group.id, suggestionId);
+    } catch (err) {
+      // Rollback
+      setGroup((prev) => {
+        const updated = [...(prev.rendezvous_suggestions || [])];
+        const likes = updated[idx].likes || [];
+        updated[idx] = {
+          ...updated[idx],
+          likes: alreadyLiked ? [...likes, currentUser?.id] : likes.filter((id) => id !== currentUser?.id),
+        };
+        return { ...prev, rendezvous_suggestions: updated };
+      });
+      console.error('Like rendezvous error:', err);
     }
   };
 
@@ -654,7 +723,7 @@ export default function GroupsScreen() {
                 </View>
 
                 <View style={dissStyles.stepBtns}>
-                  <TouchableOpacity style={dissStyles.skipBtn} onPress={finalizeDissolution} activeOpacity={0.7}>
+                  <TouchableOpacity style={dissStyles.skipBtn} onPress={() => ratingOnlyMode ? setDissolutionModal(false) : finalizeDissolution()} activeOpacity={0.7}>
                     <Text style={[dissStyles.skipBtnText, { color: colors.textSecondary }]}>Passer</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -673,7 +742,7 @@ export default function GroupsScreen() {
                   <TouchableOpacity onPress={() => setDissStep(0)} activeOpacity={0.7}>
                     <Ionicons name="chevron-back" size={22} color={colors.text} />
                   </TouchableOpacity>
-                  <Text style={[dissStyles.sheetTitle, { color: colors.text, marginBottom: 0 }]}>Évalue tes Palz</Text>
+                  <Text style={[dissStyles.sheetTitle, { color: colors.text, marginBottom: 0 }]}>Évalue tes Copines</Text>
                   <View style={{ width: 22 }} />
                 </View>
                 <Text style={[dissStyles.sheetSub, { color: colors.textSecondary, paddingHorizontal: Spacing.four, marginBottom: 8 }]}>
@@ -827,21 +896,40 @@ export default function GroupsScreen() {
           <Text style={[styles.cardTitle, { color: colors.text }]}>
             <Ionicons name="location-outline" size={18} color={PALETTE.rose} />  Rendez-vous
           </Text>
-          {typeof group.rendezvous_location === 'string' && group.rendezvous_location ? (
-            <View style={styles.rendezvousInfo}>
-              <Text style={[styles.rendezvousLocation, { color: colors.text }]}>
-                {group.rendezvous_location}
-              </Text>
-              {group.rendezvous_time && (
-                <Text style={[styles.rendezvousTime, { color: colors.textSecondary }]}>
-                  {formatDate(group.rendezvous_time)} à {formatTime(group.rendezvous_time)}
-                </Text>
-              )}
-            </View>
-          ) : (
+          {(group.rendezvous_suggestions || []).length === 0 ? (
             <Text style={[styles.emptyRendezvous, { color: colors.textSecondary }]}>
-              Pas encore de rendez-vous fixé
+              Pas encore de suggestions — sois la première !
             </Text>
+          ) : (
+            (group.rendezvous_suggestions || []).map((sug) => {
+              const likeCount = (sug.likes || []).length;
+              const liked = (sug.likes || []).includes(currentUser?.id);
+              return (
+                <View key={sug.id} style={[styles.rendezvousSuggestion, { borderColor: isDark ? '#3D332E' : '#F0E0E0' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rendezvousLocation, { color: colors.text }]}>{sug.location}</Text>
+                    {sug.time && (
+                      <Text style={[styles.rendezvousTime, { color: colors.textSecondary }]}>
+                        {formatDate(sug.time)} à {formatTime(sug.time)}
+                      </Text>
+                    )}
+                    <Text style={[styles.rendezvousSuggestor, { color: colors.textSecondary }]}>
+                      Proposé par {sug.user_name}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.rendezvousLikeBtn, { backgroundColor: liked ? PALETTE.rose : colors.backgroundSelected }]}
+                    onPress={() => handleLikeRendezvous(sug.id)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name={liked ? 'heart' : 'heart-outline'} size={16} color={liked ? '#fff' : PALETTE.rose} />
+                    {likeCount > 0 && (
+                      <Text style={[styles.rendezvousLikeCount, { color: liked ? '#fff' : PALETTE.rose }]}>{likeCount}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })
           )}
           <TouchableOpacity
             style={styles.actionButton}
@@ -1103,7 +1191,7 @@ export default function GroupsScreen() {
             {/* Interaction ratings card */}
             <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
               <Text style={[styles.cardTitle, { color: colors.text }]}>
-                <Ionicons name="star-outline" size={18} color={PALETTE.rose} />  Évalue tes Palz
+                <Ionicons name="star-outline" size={18} color={PALETTE.rose} />  Évalue tes Copines
               </Text>
               <Text style={[styles.voteQuestion, { color: colors.textSecondary }]}>
                 3 questions par membre pour améliorer tes prochains groupes
@@ -1140,6 +1228,16 @@ export default function GroupsScreen() {
         >
           <Ionicons name="exit-outline" size={20} color={PALETTE.error} />
           <Text style={styles.leaveText}>Quitter le groupe</Text>
+        </TouchableOpacity>
+
+        {/* Report button */}
+        <TouchableOpacity
+          style={styles.reportButton}
+          onPress={handleReportGroup}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="flag-outline" size={16} color={colors.textSecondary} />
+          <Text style={[styles.reportText, { color: colors.textSecondary }]}>Signaler le groupe</Text>
         </TouchableOpacity>
 
         <View style={{ height: 120 }} />
@@ -1677,6 +1775,32 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginBottom: Spacing.one,
   },
+  rendezvousSuggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    gap: 10,
+  },
+  rendezvousSuggestor: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  rendezvousLikeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  rendezvousLikeCount: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1865,6 +1989,18 @@ const styles = StyleSheet.create({
     color: PALETTE.error,
     fontSize: 15,
     fontWeight: '600',
+  },
+  reportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  reportText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   // ── Chat ──
   chatContainer: {

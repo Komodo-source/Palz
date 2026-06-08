@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 
 import { useAuth } from '@/contexts/auth';
+import ConfettiCannon from '@/components/ConfettiCannon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing } from '@/constants/theme';
 import { isValidEmail } from '@/utils/validation';
@@ -65,6 +66,7 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [confettiFiring, setConfettiFiring] = useState(false);
 
   const pickProfilePhoto = () => {
     Alert.alert('Photo de profil', 'Choisis la source', [
@@ -179,7 +181,8 @@ export default function SignupScreen() {
         }
       }
 
-      router.replace('/onboarding');
+      setConfettiFiring(true);
+      setTimeout(() => router.replace('/onboarding'), 1200);
     } catch (err) {
       console.log('err', err);
       const msg = err.displayMessage || err.response?.data?.error || 'Inscription échouée. Réessaie.';
@@ -206,6 +209,7 @@ export default function SignupScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <ConfettiCannon firing={confettiFiring} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"

@@ -124,7 +124,7 @@ export default function ListSettings() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: "Rejoins Palz, l'app pour trouver des amies ! \u{1F338}",
+        message: "Rejoins Copines, l'app pour trouver des amies ! \u{1F338}",
       });
     } catch (err) {
       console.error('Share error:', err);
@@ -625,7 +625,7 @@ export default function ListSettings() {
 
           <TouchableOpacity
             style={styles.row}
-            onPress={() => handleOpenUrl('https://palzapp.com/conditions-utilisation')}
+            onPress={() => handleOpenUrl('https://copines-app.fr/')}
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>
@@ -641,7 +641,7 @@ export default function ListSettings() {
 
           <TouchableOpacity
             style={styles.row}
-            onPress={() => handleOpenUrl('https://palzapp.com/confidentialite')}
+            onPress={() => handleOpenUrl('https://copines-app.fr/')}
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>

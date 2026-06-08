@@ -19,6 +19,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
+import ConfettiCannon from '@/components/ConfettiCannon';
 
 const CATEGORY_META = {
   bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
@@ -177,6 +178,7 @@ export default function EventsScreen() {
   const [userLocation, setUserLocation] = useState(null);
   const [locLoading, setLocLoading] = useState(false);
   const [joiningId, setJoiningId] = useState(null);
+  const [confettiFiring, setConfettiFiring] = useState(false);
   const { user } = useAuth();
   const [suggestions, setSuggestions] = useState([]);
   const [weather, setWeather] = useState(null);
@@ -307,7 +309,8 @@ export default function EventsScreen() {
         )
       );
       snackbar.success(`Rejointe ! Tu participes à ${eventItem.title} 🎉`, 2500);
-      router.push(`/(tabs)/event/${eventItem.id}`);
+      setConfettiFiring(true);
+      setTimeout(() => { setConfettiFiring(false); router.push(`/(tabs)/event/${eventItem.id}`); }, 1200);
     } catch (err) {
       Alert.alert('Erreur', err?.response?.data?.error || "Impossible de rejoindre l'événement.");
     } finally {
@@ -707,6 +710,7 @@ const CeSoirSection = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <ConfettiCannon firing={confettiFiring} />
       {/* Header */}
       <View style={styles.header}>
         <View>
