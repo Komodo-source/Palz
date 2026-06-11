@@ -20,6 +20,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing } from '@/constants/theme';
 import { usersApi, constantDataApi, uploadApi } from '@/services/api';
 import { COMPATIBILITY_QUESTIONS, getDefaultAnswers } from '@/utils/compatibility';
+import { hasCompletedOnboarding } from '@/utils/onboarding';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import ConfettiCannon from '@/components/ConfettiCannon';
@@ -219,41 +220,43 @@ function PhotosStep({ photos, onAddPhoto, onRemovePhoto, isUploading }) {
         <Text style={styles.selectionCount}>{photos.length}/4</Text>
       </View>
 
-      <View style={styles.photoGrid}>
-        {photos.map((photo, index) => (
-          <View key={index} style={styles.photoWrapper}>
-            <Image source={{ uri: photo.uri }} style={styles.photo} />
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.pickerScroll}>
+        <View style={styles.photoGrid}>
+          {photos.map((photo, index) => (
+            <View key={photo.uploadedUrl || index} style={styles.photoWrapper}>
+              <Image source={{ uri: photo.uri }} style={styles.photo} />
+              <TouchableOpacity
+                style={styles.removePhotoBtn}
+                onPress={() => onRemovePhoto(index)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={12} color={PALETTE.white} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {photos.length < 4 && (
             <TouchableOpacity
-              style={styles.removePhotoBtn}
-              onPress={() => onRemovePhoto(index)}
-              activeOpacity={0.8}
+              style={styles.addPhotoBtn}
+              onPress={onAddPhoto}
+              disabled={isUploading}
+              activeOpacity={0.7}
             >
-              <Ionicons name="close" size={12} color={PALETTE.white} />
+              {isUploading ? (
+                <ActivityIndicator color={PALETTE.rose} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="add" size={28} color={PALETTE.rose} />
+                  <Text style={styles.addPhotoLabel}>Ajouter</Text>
+                </>
+              )}
             </TouchableOpacity>
-          </View>
-        ))}
-        {photos.length < 4 && (
-          <TouchableOpacity
-            style={styles.addPhotoBtn}
-            onPress={onAddPhoto}
-            disabled={isUploading}
-            activeOpacity={0.7}
-          >
-            {isUploading ? (
-              <ActivityIndicator color={PALETTE.rose} size="small" />
-            ) : (
-              <>
-                <Ionicons name="add" size={28} color={PALETTE.rose} />
-                <Text style={styles.addPhotoLabel}>Ajouter</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+          )}
+        </View>
 
-      <Text style={styles.photoHint}>
-        {photos.length === 0 ? 'Des photos naturelles et souriantes sont les meilleures ! 🌸' : 'Tu peux en ajouter ou modifier plus tard'}
-      </Text>
+        <Text style={styles.photoHint}>
+          {photos.length === 0 ? 'Des photos naturelles et souriantes sont les meilleures ! 🌸' : 'Tu peux en ajouter ou modifier plus tard'}
+        </Text>
+      </ScrollView>
     </View>
   );
 }
@@ -405,9 +408,12 @@ export default function OnboardingScreen() {
   const progressAnim = useRef(new RNAnimated.Value(0)).current;
   const resultOpacity = useRef(new RNAnimated.Value(0)).current;
 
-  //Human AI recognition
-   const humanConfig = {
-        // Required models for your use case
+  // Human AI recognition — created once on demand, never on render
+  // (a new Human instance per render leaks tf memory and crashes after a few re-renders)
+  const humanRef = useRef(null);
+  const getHuman = () => {
+    if (!humanRef.current) {
+      humanRef.current = new Human({
         modelBasePath: 'https://vladmandic.github.io/human/models/',
         face: {
           enabled: true,
@@ -420,10 +426,11 @@ export default function OnboardingScreen() {
         body: { enabled: false },
         hand: { enabled: false },
         object: { enabled: false },
-        backend: 'rn-webgl'
-      };
-
-      const human = new Human(humanConfig);
+        backend: 'rn-webgl',
+      });
+    }
+    return humanRef.current;
+  };
 
 
 
@@ -504,6 +511,7 @@ export default function OnboardingScreen() {
   };
 
   async function processImage(imageUri) {
+    const human = getHuman();
     const response = await fetch(imageUri, {}, { isBinary: true });
     const imageData = await response.arrayBuffer();
     const tensor = decodeJpeg(new Uint8Array(imageData));
@@ -513,6 +521,7 @@ export default function OnboardingScreen() {
   }
 
   async function compareFacesAndGender(photo1Uri, photo2Uri) {
+    const human = getHuman();
     await tf.ready();
     await human.load();
     const result1 = await processImage(photo1Uri);
@@ -731,48 +740,57 @@ export default function OnboardingScreen() {
   }
 
 
-  // Load backend data
+  // Load backend data (cached as plain JSON in AsyncStorage)
   useEffect(() => {
     async function loadData() {
       try {
-        const [zodiacRes, sportsRes, hobbiesRes, typeRes] = [];
+        let constants = null;
+        try {
+          const cached = await AsyncStorage.getItem('onboarding_constants_v2');
+          if (cached) constants = JSON.parse(cached);
+        } catch {}
 
-        const zodiac = await AsyncStorage.getItem('zodiac');
-        const sports = await AsyncStorage.getItem('sports');
-        const hobbies = await AsyncStorage.getItem('hobbies');
-        const type_searched = await AsyncStorage.getItem('type_searched');
+        const cacheValid =
+          constants &&
+          Array.isArray(constants.zodiac) && constants.zodiac.length > 0 &&
+          Array.isArray(constants.typeSearch) && constants.typeSearch.length > 0;
 
-        if(zodiac&& sports&& hobbies&& type_searched){
-          const [zodiacRes, sportsRes, hobbiesRes, typeRes] =  [zodiac, sports, hobbies, type_searched]
-        }else{
+        if (!cacheValid) {
           const [zodiacRes, sportsRes, hobbiesRes, typeRes] = await Promise.all([
             constantDataApi.getZodiacSigns(),
             constantDataApi.getSports(),
             constantDataApi.getHobbies(),
             constantDataApi.getTypeSearch(),
           ]);
-          await AsyncStorage.setItem('zodiac', zodiacRes);
-          await AsyncStorage.setItem('sports',  sportsRes);
-          await AsyncStorage.setItem('hobbies',  hobbiesRes);
-          await AsyncStorage.setItem('type_searched', typeRes);
-        }
-        setZodiacSigns((zodiacRes.data?.astrology || []).map((s) => ({ id: s.id, name: s.name })));
-        setSportsList((sportsRes.data?.sports || []).map((s) => s.title));
-        // Extract data safely — backend keys vary
-        const hobbiesData = hobbiesRes.data || {};
-        const hobbiesArr = hobbiesData.hobbies || hobbiesData.sports || hobbiesData.data || [];
-        setHobbiesList(Array.isArray(hobbiesArr) ? hobbiesArr.map((s) => s.title || s) : []);
 
-        const typeData = typeRes.data || {};
-        const typeArr = typeData.search_types || typeData.type_search || typeData.data || [];
-        console.log(typeData);
-        setTypeSearchOptions(Array.isArray(typeArr) ? typeArr : []);
+          // Extract data safely — backend keys vary
+          const hobbiesData = hobbiesRes.data || {};
+          const hobbiesArr = hobbiesData.hobbies || hobbiesData.sports || hobbiesData.data || [];
+          const typeData = typeRes.data || {};
+          const typeArr = typeData.search_types || typeData.type_search || typeData.data || [];
+
+          constants = {
+            zodiac: (zodiacRes.data?.astrology || []).map((s) => ({ id: s.id, name: s.name })),
+            sports: (sportsRes.data?.sports || []).map((s) => s.title),
+            hobbies: Array.isArray(hobbiesArr) ? hobbiesArr.map((s) => s.title || s) : [],
+            typeSearch: Array.isArray(typeArr) ? typeArr : [],
+          };
+          try {
+            await AsyncStorage.setItem('onboarding_constants_v2', JSON.stringify(constants));
+          } catch {}
+        }
+
+        setZodiacSigns(constants.zodiac || []);
+        setSportsList(constants.sports || []);
+        setHobbiesList(constants.hobbies || []);
+        setTypeSearchOptions(Array.isArray(constants.typeSearch) ? constants.typeSearch : []);
       } catch (err) {
         console.error('Failed to load constants:', err?.message || err);
         // Fallback data
         setZodiacSigns(['Bélier', 'Taureau', 'Gémeaux', 'Cancer', 'Lion', 'Vierge', 'Balance', 'Scorpion', 'Sagittaire', 'Capricorne', 'Verseau', 'Poissons']);
         setSportsList(['Foot', 'Danse', 'Yoga', 'Natation', 'Running', 'Tennis', 'Escalade', 'Vélo', 'Musculation', 'Pilates', 'Boxe', 'Surf']);
         setHobbiesList(['Lecture', 'Cuisine', 'Voyages', 'Photographie', 'Dessin', 'Musique', 'Cinéma', 'Jardinage', 'Jeux vidéo', 'Théâtre', 'Écriture', 'Bricolage']);
+        setTypeSearchOptions([]);
       } finally {
         setLoading(false);
       }
@@ -1032,7 +1050,8 @@ export default function OnboardingScreen() {
     }
     if (step === 6) {
       return {
-        canProceed: selectedTypeSearch !== null,
+        // If the options failed to load, don't block the whole onboarding on this step
+        canProceed: typeSearchOptions.length === 0 || selectedTypeSearch !== null,
         component: (
           <RelationshipStep
             options={typeSearchOptions}
@@ -1121,8 +1140,12 @@ export default function OnboardingScreen() {
       }, 2000);
     } catch (err) {
       console.error('Save onboarding error:', err);
-      console.error('Detaisls :', err);
-      router.replace('/(tabs)');
+      // Don't let the user into the app if the profile couldn't be saved —
+      // that would bypass the onboarding gate.
+      Alert.alert(
+        'Oups',
+        "Impossible d'enregistrer ton profil. Vérifie ta connexion et réessaie !"
+      );
     } finally {
       setSaving(false);
     }
@@ -1195,19 +1218,23 @@ export default function OnboardingScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: PALETTE.cream }]}>
-      {/* Top bar */}
+      {/* Top bar — leaving the onboarding is only possible if it was already completed */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          onPress={step > 0 ? handleBack : () => router.replace('/(tabs)')}
-          activeOpacity={0.7}
-          style={styles.topBarButton}
-        >
-          <Ionicons
-            name={step > 0 ? 'chevron-back' : 'close'}
-            size={22}
-            color={PALETTE.textMid}
-          />
-        </TouchableOpacity>
+        {step > 0 ? (
+          <TouchableOpacity onPress={handleBack} activeOpacity={0.7} style={styles.topBarButton}>
+            <Ionicons name="chevron-back" size={22} color={PALETTE.textMid} />
+          </TouchableOpacity>
+        ) : hasCompletedOnboarding(user) ? (
+          <TouchableOpacity
+            onPress={() => router.replace('/(tabs)')}
+            activeOpacity={0.7}
+            style={styles.topBarButton}
+          >
+            <Ionicons name="close" size={22} color={PALETTE.textMid} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
         <Text style={[styles.stepCounter, { color: PALETTE.textLight }]}>
           {stepLabels[step] || ''}
         </Text>
@@ -1305,8 +1332,10 @@ function RelationshipStep({ options, selected, onSelect }) {
           <Text style={styles.stepTitle}>Type de relation</Text>
           <Text style={styles.stepSubtitle}>Que recherches-tu sur Copines ?</Text>
         </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={PALETTE.rose} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <Text style={styles.relationHint}>
+            Impossible de charger les options pour le moment. Tu pourras choisir le type de relation plus tard dans tes paramètres — appuie sur Continuer.
+          </Text>
         </View>
       </View>
     );
@@ -2369,12 +2398,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 20,
     paddingVertical: 8,
-  },
-  skipLink: {
-    color: PALETTE.textLight,
-    fontSize: 15,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
   },
 
   // Relation

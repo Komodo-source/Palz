@@ -34,16 +34,16 @@ export const Colors = {
     shadowColor: PALETTE.shadow,
   },
   dark: {
-    text: '#F5F0EB',
-    background: '#2D2520',
-    backgroundElement: '#3D332E',
-    backgroundSelected: '#4D3F38',
-    textSecondary: '#B0A098',
-    accent: '#FF8FA3',
-    accentLight: '#6B5A50',
-    cardBg: '#3D332E',
-    border: '#4D3F38',
-    shadowColor: '#1A1410',
+    text: '#EDE8F8',           // cool white with soft purple tint
+    background: '#0F0B1A',     // deep purple-black — night sky
+    backgroundElement: '#1B1230',  // card / surface
+    backgroundSelected: '#271A48', // pressed / selected
+    textSecondary: '#9182B4',  // muted purple-grey
+    accent: '#FF7FA0',         // rose — brighter than light mode to pop on dark bg
+    accentLight: '#2C1C46',    // deep plum tint for subtle accents
+    cardBg: '#1B1230',
+    border: '#271A3E',
+    shadowColor: '#050210',    // near black-purple for shadows
   },
 };
 

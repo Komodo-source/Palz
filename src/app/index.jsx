@@ -1,9 +1,10 @@
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/contexts/auth';
 import { ActivityIndicator, View, Text } from 'react-native';
+import { hasCompletedOnboarding } from '@/utils/onboarding';
 
 export default function RootIndex() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   console.log('🔍 RootIndex render — isLoading:', isLoading, '| isAuthenticated:', isAuthenticated);
 
@@ -19,6 +20,10 @@ export default function RootIndex() {
   console.log('✅ Auth ready — redirecting to:', isAuthenticated ? '/(tabs)' : '/(auth)/login');
 
   if (isAuthenticated) {
+    // No app access until the onboarding (incl. photo verification) is finished
+    if (!hasCompletedOnboarding(user)) {
+      return <Redirect href="/onboarding" />;
+    }
     return <Redirect href="/(tabs)" />;
   }
 

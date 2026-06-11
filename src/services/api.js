@@ -310,10 +310,7 @@ export const constantDataApi = {
 
 // ── Payments ──
 export const paymentsApi = {
-  createPaymentSheet: (data = {}) => api.post('/payments/create-payment-sheet', data),
-  confirm: (paymentIntentId) => api.post('/payments/confirm', { payment_intent_id: paymentIntentId }),
   getStatus: () => api.get('/payments/status'),
-  cancel: () => api.post('/payments/cancel'),
 };
 
 export default api;

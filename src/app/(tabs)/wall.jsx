@@ -15,7 +15,12 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import { wallApi, uploadApi, messagesApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
@@ -49,25 +54,31 @@ function formatTimeAgo(dateStr) {
 
 // ── Reaction button ──
 function ReactionButton({ item, onReact, colors }) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   const handlePress = () => {
-    onReact(item.id, item.has_reacted);
+    scale.value = withSpring(1.45, { damping: 4, stiffness: 400 }, () => {
+      scale.value = withSpring(1, { damping: 8, stiffness: 260 });
+    });
+    onReact(item.id);
   };
 
   return (
-    <View>
-      <TouchableOpacity
-        style={styles.reactBtn}
-        onPress={handlePress}
-        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-      >
-        <Text style={[styles.reactFlower, { opacity: item.has_reacted ? 1 : 0.4 }]}>🌸</Text>
-        {item.reaction_count > 0 && (
-          <Text style={[styles.reactCount, { color: item.has_reacted ? PALETTE.rose : colors.textSecondary }]}>
-            {item.reaction_count}
-          </Text>
-        )}
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity
+      style={styles.reactBtn}
+      onPress={handlePress}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Animated.Text style={[styles.reactFlower, { opacity: item.has_reacted ? 1 : 0.4 }, animStyle]}>
+        🌸
+      </Animated.Text>
+      {item.reaction_count > 0 && (
+        <Text style={[styles.reactCount, { color: item.has_reacted ? PALETTE.rose : colors.textSecondary }]}>
+          {item.reaction_count}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -106,12 +117,32 @@ export default function WallScreen() {
   const lastShownThemeId = useRef(null);
   const countdownInterval = useRef(null);
 
+  // Optimistic reactions — spam guard + debounced API call
+  const reactionTimestamps = useRef({});  // { postId: number[] }  — recent tap times
+  const reactionDebounce   = useRef({});  // { postId: timeout }   — pending API timer
+  const reactionOriginal   = useRef({});  // { postId: {has_reacted, reaction_count} } — server truth
+  const pendingReacted     = useRef({});  // { postId: boolean }   — desired final state
+  const spamAlertActive    = useRef(false);
+  const sortedIdsRef       = useRef([]);  // stable display order from last fetch
+
+  const SPAM_TAPS     = 4;    // alert threshold per post
+  const SPAM_WINDOW   = 1200; // ms
+  const DEBOUNCE_MS   = 650;  // ms before API fires
+
   const fetchWall = useCallback(async () => {
     try {
       const res = await wallApi.getPosts();
       const newTheme = res.data?.theme ?? null;
+      const newPosts = res.data?.posts ?? [];
       setTheme(newTheme);
-      setPosts(res.data?.posts ?? []);
+      setPosts(newPosts);
+
+      // Capture display order at fetch time so reactions don't cause cards to jump
+      const seen = new Set();
+      sortedIdsRef.current = newPosts
+        .filter(p => { if (seen.has(p.user_initiator)) return false; seen.add(p.user_initiator); return true; })
+        .sort((a, b) => (b.reaction_count ?? 0) - (a.reaction_count ?? 0))
+        .map(p => p.id);
       if (newTheme) {
         setCountdown(getThemeCountdown(newTheme.ends_at));
         if (lastShownThemeId.current !== newTheme.id) {
@@ -133,6 +164,11 @@ export default function WallScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+  }, []);
+
+  // Clear all pending debounce timers on unmount
+  useEffect(() => {
+    return () => { Object.values(reactionDebounce.current).forEach(clearTimeout); };
   }, []);
 
   // Update countdown every minute
@@ -177,31 +213,86 @@ export default function WallScreen() {
     }
   };
 
-  const handleReact = async (postId, wasReacted) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, has_reacted: !p.has_reacted, reaction_count: p.has_reacted ? Math.max(0, (p.reaction_count || 0) - 1) : (p.reaction_count || 0) + 1 }
-          : p
-      )
-    );
-    try {
-      await wallApi.reactToPost(postId);
-      if (wasReacted) {
-        snackbar.info('Réaction retirée', 2000);
-      } else {
-        snackbar.like('🌸 Réaction envoyée !', 2000);
+  const handleReact = useCallback((postId) => {
+    const now = Date.now();
+
+    // ── Spam guard ──────────────────────────────────────────────────────────
+    const prev_taps = reactionTimestamps.current[postId] ?? [];
+    const recent = prev_taps.filter(t => now - t < SPAM_WINDOW);
+    reactionTimestamps.current[postId] = [...recent, now];
+
+    if (recent.length >= SPAM_TAPS) {
+      if (!spamAlertActive.current) {
+        spamAlertActive.current = true;
+        Alert.alert(
+          'Du calme ! 🌸',
+          'Tu appuies un peu vite sur le bouton. Prends ton temps !',
+          [{ text: 'OK', onPress: () => { spamAlertActive.current = false; } }]
+        );
       }
-    } catch {
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? { ...p, has_reacted: !p.has_reacted, reaction_count: p.has_reacted ? Math.max(0, (p.reaction_count || 0) - 1) : (p.reaction_count || 0) + 1 }
-            : p
-        )
-      );
+      return;
     }
-  };
+
+    // ── Optimistic update ───────────────────────────────────────────────────
+    // Capture server truth once at the start of a debounce window so rollback is correct
+    setPosts(prev => {
+      const post = prev.find(p => p.id === postId);
+      if (!post) return prev;
+
+      if (!reactionOriginal.current[postId]) {
+        reactionOriginal.current[postId] = {
+          has_reacted: post.has_reacted ?? false,
+          reaction_count: post.reaction_count ?? 0,
+        };
+      }
+
+      const next = !post.has_reacted;
+      pendingReacted.current[postId] = next;
+
+      return prev.map(p => p.id !== postId ? p : {
+        ...p,
+        has_reacted: next,
+        reaction_count: next
+          ? (p.reaction_count ?? 0) + 1
+          : Math.max(0, (p.reaction_count ?? 0) - 1),
+      });
+    });
+
+    // ── Debounced API call ──────────────────────────────────────────────────
+    // Cancels previous timer so rapid taps only fire one request at the end
+    clearTimeout(reactionDebounce.current[postId]);
+    reactionDebounce.current[postId] = setTimeout(async () => {
+      const original = reactionOriginal.current[postId];
+      const desired  = pendingReacted.current[postId];
+
+      // Net result equals server state → nothing to sync
+      if (!original || desired === original.has_reacted) {
+        delete reactionOriginal.current[postId];
+        delete pendingReacted.current[postId];
+        delete reactionDebounce.current[postId];
+        return;
+      }
+
+      try {
+        await wallApi.reactToPost(postId);
+        snackbar[desired ? 'like' : 'info'](
+          desired ? '🌸 Réaction envoyée !' : 'Réaction retirée',
+          1800
+        );
+      } catch {
+        // Rollback to the actual server state
+        const orig = reactionOriginal.current[postId];
+        if (orig) {
+          setPosts(prev => prev.map(p => p.id !== postId ? p : { ...p, ...orig }));
+        }
+        snackbar.error('Réaction non envoyée', 2000);
+      } finally {
+        delete reactionOriginal.current[postId];
+        delete pendingReacted.current[postId];
+        delete reactionDebounce.current[postId];
+      }
+    }, DEBOUNCE_MS);
+  }, [snackbar, SPAM_TAPS, SPAM_WINDOW, DEBOUNCE_MS]);
 
   const handlePostPhoto = () => {
     Alert.alert('Poster une photo', 'Choisis la source', [
@@ -379,16 +470,22 @@ export default function WallScreen() {
     }
   };
 
-  // One post per user — sorted by most liked (reaction_count descending)
+  // One post per user — order is locked at fetch time so reactions don't cause cards to jump
   const displayPosts = useMemo(() => {
     const seen = new Set();
-    return posts
-      .filter((p) => {
-        if (seen.has(p.user_initiator)) return false;
-        seen.add(p.user_initiator);
-        return true;
-      })
-      .sort((a, b) => (b.reaction_count || 0) - (a.reaction_count || 0));
+    const unique = posts.filter(p => {
+      if (seen.has(p.user_initiator)) return false;
+      seen.add(p.user_initiator);
+      return true;
+    });
+    return unique.sort((a, b) => {
+      const ai = sortedIdsRef.current.indexOf(a.id);
+      const bi = sortedIdsRef.current.indexOf(b.id);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
   }, [posts]);
 
   const leftPosts = displayPosts.filter((_, i) => i % 2 === 0);

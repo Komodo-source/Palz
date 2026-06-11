@@ -54,6 +54,10 @@ const extractFilename = (url) => {
   return url;
 };
 
+// User fields coming from the API/storage are not guaranteed to be strings
+// (objects here crash React with "Objects are not valid as a React child").
+const asStr = (v) => (typeof v === 'string' ? v : '');
+
 const PALETTE = {
   rose: '#FF8FA3',
   roseLight: '#FFB5C2',
@@ -86,11 +90,11 @@ export default function ProfileEditingScreen() {
 
 
   // ── Form state ──
-  const [bio, setBio] = useState(user?.bio || '');
-  const [work, setWork] = useState(user?.work || '');
-  const [situation, setSituation] = useState(user?.situation || '');
-  const [location, setLocation] = useState(user?.location || user?.home_location || '');
-  const [dateOfBirth, setDateOfBirth] = useState(user?.date_of_birth || '');
+  const [bio, setBio] = useState(asStr(user?.bio));
+  const [work, setWork] = useState(asStr(user?.work));
+  const [situation, setSituation] = useState(asStr(user?.situation));
+  const [location, setLocation] = useState(asStr(user?.location) || asStr(user?.home_location));
+  const [dateOfBirth, setDateOfBirth] = useState(asStr(user?.date_of_birth));
   const [ageMin, setAgeMin] = useState(user?.age_min || 18);
   const [ageMax, setAgeMax] = useState(user?.age_max || 40);
   const [showSituationPicker, setShowSituationPicker] = useState(false);
@@ -109,8 +113,8 @@ export default function ProfileEditingScreen() {
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   // ── Prompt Q&A ──
-  const [promptQuestion, setPromptQuestion] = useState(user?.prompt_question || '');
-  const [promptAnswer, setPromptAnswer] = useState(user?.prompt_answer || '');
+  const [promptQuestion, setPromptQuestion] = useState(asStr(user?.prompt_question));
+  const [promptAnswer, setPromptAnswer] = useState(asStr(user?.prompt_answer));
   const [showPromptPicker, setShowPromptPicker] = useState(false);
 
   // ── Labels (Vibe / Dispo / IRL) ──
@@ -124,6 +128,7 @@ export default function ProfileEditingScreen() {
 
   // ── Audio / Fun Fact ──
   const [isRecording, setIsRecording] = useState(false);
+  const justStartedRef = useRef(false); // prevents auto-stop effect from firing before recorder state syncs
   const [recordedAudioUri, setRecordedAudioUri] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -158,11 +163,11 @@ export default function ProfileEditingScreen() {
   useEffect(() => {
     if (!didInitRef.current && user) {
       didInitRef.current = true;
-      setBio(user.bio || '');
-      setWork(user.work || '');
-      setSituation(user.situation || '');
-      setLocation(user.location || user.home_location || '');
-      setDateOfBirth(user.date_of_birth || '');
+      setBio(asStr(user.bio));
+      setWork(asStr(user.work));
+      setSituation(asStr(user.situation));
+      setLocation(asStr(user.location) || asStr(user.home_location));
+      setDateOfBirth(asStr(user.date_of_birth));
       if (user.age_min) setAgeMin(user.age_min);
       if (user.age_max) setAgeMax(user.age_max);
       if (user.astrology_sign_id) setSelectedZodiacId(user.astrology_sign_id);
@@ -180,8 +185,8 @@ export default function ProfileEditingScreen() {
         setRecordedAudioUri(getStorageUrl(user.voice_fun_fact));
       }
 
-      if (user.prompt_question) setPromptQuestion(user.prompt_question);
-      if (user.prompt_answer) setPromptAnswer(user.prompt_answer);
+      if (user.prompt_question) setPromptQuestion(asStr(user.prompt_question));
+      if (user.prompt_answer) setPromptAnswer(asStr(user.prompt_answer));
       if (user.labels) {
         const parsed = parseDbJson(user.labels);
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -214,9 +219,15 @@ export default function ProfileEditingScreen() {
     }
   }, [playerStatus.didJustFinish]);
 
-  // ── Auto-stop recording: detect when native recorder stops ──
+  // ── Auto-stop: fires when native recorder stops (max duration, error, etc.) ──
   useEffect(() => {
-    if (isRecording && !recordingState.isRecording) {
+    if (recordingState.isRecording) {
+      // Recorder is genuinely active — clear the startup guard
+      justStartedRef.current = false;
+      return;
+    }
+    // Only call stopRecording if we didn't just start (guard prevents instant false-stop)
+    if (isRecording && !justStartedRef.current) {
       stopRecording();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -397,8 +408,8 @@ export default function ProfileEditingScreen() {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
       await recorder.prepareToRecordAsync();
+      justStartedRef.current = true; // guard: native recorder state hasn't synced yet
       recorder.record();
-
       setIsRecording(true);
     } catch (err) {
       console.error('Recording start error:', err);

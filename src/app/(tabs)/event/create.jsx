@@ -62,15 +62,25 @@ function defaultStartTime() {
   return d;
 }
 
+// expo-router params can come back as arrays (or non-strings) when the same
+// route is pushed several times — always normalize to a plain string.
+function paramToString(value) {
+  const v = Array.isArray(value) ? value[0] : value;
+  return typeof v === 'string' ? v : '';
+}
+
 export default function CreateEventScreen() {
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
   const params = useLocalSearchParams();
+  const paramTitle = paramToString(params.title);
+  const paramCategory = paramToString(params.category);
+  const paramTonight = paramToString(params.tonight);
 
-  const [title, setTitle] = useState(params.title || '');
+  const [title, setTitle] = useState(paramTitle);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState(
-    CATEGORIES.find((c) => c.key === params.category) ? params.category : 'bar'
+    CATEGORIES.find((c) => c.key === paramCategory) ? paramCategory : 'bar'
   );
   const [locationName, setLocationName] = useState('');
   const [latitude, setLatitude] = useState(null);
@@ -80,7 +90,7 @@ export default function CreateEventScreen() {
   const [showMap, setShowMap] = useState(false);
   const [maxMembers, setMaxMembers] = useState(10);
   const [startsAt, setStartsAt] = useState(
-    params.tonight === 'true' ? tonightAt() : defaultStartTime()
+    paramTonight === 'true' ? tonightAt() : defaultStartTime()
   );
 
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -195,7 +205,7 @@ export default function CreateEventScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Nouvel événement</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Nouvel sortie</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -419,6 +429,7 @@ export default function CreateEventScreen() {
             value={startsAt}
             mode="date"
             display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
             minimumDate={new Date()}
             maximumDate={new Date(Date.now() + 72 * 60 * 60 * 1000)}
             onChange={onDateChange}
@@ -430,6 +441,7 @@ export default function CreateEventScreen() {
             value={startsAt}
             mode="time"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
             onChange={onTimeChange}
             locale="fr-FR"
           />

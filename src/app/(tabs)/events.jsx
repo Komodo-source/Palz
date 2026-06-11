@@ -20,6 +20,7 @@ import { getColors, Spacing, PALETTE } from '@/constants/theme';
 import { parseDbJson } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 import ConfettiCannon from '@/components/ConfettiCannon';
+import { EventsSkeleton } from '@/components/Skeleton';
 
 const CATEGORY_META = {
   bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
@@ -701,11 +702,7 @@ const CeSoirSection = () => {
   };
 
   if (loading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={PALETTE.rose} />
-      </View>
-    );
+    return <EventsSkeleton colors={colors} isDark={colorScheme === 'dark'} />;
   }
 
   return (

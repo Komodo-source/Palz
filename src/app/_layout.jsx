@@ -1,14 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StripeProvider } from '@stripe/stripe-react-native';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { AuthProvider } from '@/contexts/auth';
 import { SnackbarProvider } from '@/contexts/snackbar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
 function RootNavigator() {
   const colorScheme = useColorScheme();
@@ -35,6 +34,9 @@ function RootNavigator() {
         case 'wall_theme':
           router.push('/(tabs)/wall');
           break;
+        case 'premium_expiring':
+          router.push('/(tabs)/profil/payement_page');
+          break;
         default:
           break;
       }
@@ -48,7 +50,6 @@ function RootNavigator() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
@@ -60,18 +61,29 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    // react-native-purchases is native-only — skip on web and Expo Go
+    if (Platform.OS === 'web') return;
+    if (Constants.appOwnership === 'expo') return;
+
+    const apiKey = Platform.OS === 'ios'
+      ? process.env.EXPO_PUBLIC_RC_APPLE_API_KEY
+      : process.env.EXPO_PUBLIC_RC_GOOGLE_API_KEY;
+
+    if (!apiKey) return;
+
+    import('react-native-purchases').then(({ default: Purchases }) => {
+      Purchases.configure({ apiKey });
+    }).catch(() => {});
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StripeProvider
-        publishableKey={STRIPE_PK}
-        merchantIdentifier="merchant.com.palz"
-      >
-        <AuthProvider>
-          <SnackbarProvider>
-            <RootNavigator />
-          </SnackbarProvider>
-        </AuthProvider>
-      </StripeProvider>
+      <AuthProvider>
+        <SnackbarProvider>
+          <RootNavigator />
+        </SnackbarProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }

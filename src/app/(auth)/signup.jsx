@@ -96,10 +96,6 @@ export default function SignupScreen() {
     ]);
   };
 
-  const debugHandle = () => {
-    router.replace('/onboarding');
-  }
-
   const UpgradeStep = () => {
     if (!email.trim() || !userName.trim() || !fullName.trim()) {
       Alert.alert('Oups', 'Remplis tous les champs');
@@ -216,9 +212,7 @@ export default function SignupScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>Palz</Text>
-          </View>
+            <Text style={styles.logo}>Copines</Text>
           <Text style={styles.subtitle}>
             Crée ton compte et commence à rencontrer des amis formidables !
           </Text>
@@ -240,12 +234,6 @@ export default function SignupScreen() {
               value={fullName}
               onChangeText={setFullName}
             />
-            <TouchableOpacity
-              onPress={() => debugHandle()}
-            >
-              <Text>test</Text>
-
-            </TouchableOpacity>
 
             <Text style={styles.label}>Pseudo *</Text>
             <TextInput
@@ -352,6 +340,10 @@ export default function SignupScreen() {
                     value={dateOfBirth || new Date(2000, 0, 1)}
                     mode="date"
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    // The signup screen always uses the light cream palette, so force
+                    // the light picker — otherwise iOS dark mode renders white text
+                    // on the light background and the picker looks invisible.
+                    themeVariant="light"
                     maximumDate={new Date()}
                     minimumDate={new Date(1900, 0, 1)}
                     onChange={handleDateChange}
@@ -509,6 +501,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: PALETTE.rose,
     letterSpacing: -1,
+    marginBottom: 15
   },
   subtitle: {
     fontSize: 16,

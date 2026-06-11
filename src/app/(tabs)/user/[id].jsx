@@ -63,9 +63,18 @@ function VoiceNotePlayer({ uri, colors }) {
   const toggle = async () => {
     if (status.playing) {
       player.pause();
-    } else {
+      return;
+    }
+    try {
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      // Restart from the beginning when the clip already finished,
+      // otherwise play() after the end does nothing.
+      if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
+        await player.seekTo(0);
+      }
       player.play();
+    } catch (err) {
+      console.warn('Voice note playback error:', err?.message || err);
     }
   };
 
@@ -498,8 +507,8 @@ const lifestyleBadges = [
           </View>
         )}
 
-        {/* ── Fun fact vocale ── */}
-        {user.voice_fun_fact ? (
+        {/* ── Fun fact vocale (premium profiles) ── */}
+        {user.is_premium && typeof user.voice_fun_fact === 'string' && user.voice_fun_fact ? (
           <VoiceNotePlayer uri={getStorageUrl(user.voice_fun_fact)} colors={colors} />
         ) : null}
 

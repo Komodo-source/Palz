@@ -37,7 +37,7 @@ function Stepper({ value, onDecrement, onIncrement, min, max, unit, isDark, colo
       >
         <Ionicons name="remove" size={16} color={value <= min ? colors.textSecondary : PALETTE.rose} />
       </TouchableOpacity>
-      <Text style={[stepStyles.value, { color: colors.text }]}>{value}{unit}</Text>
+      <Text style={[stepStyles.value, { color: colors.text }]}>{String(value ?? '')}{String(unit ?? '')}</Text>
       <TouchableOpacity
         style={[stepStyles.btn, { backgroundColor: isDark ? '#4D3F38' : PALETTE.rosePale }]}
         onPress={onIncrement}
@@ -63,9 +63,10 @@ export default function ListSettings() {
   const isDark = colorScheme === 'dark';
   const snackbar = useSnackbar();
 
-  const [ageMin, setAgeMin] = useState(user?.age_min_filter ?? 18);
-  const [ageMax, setAgeMax] = useState(user?.age_max_filter ?? 35);
-  const [radius, setRadius] = useState(user?.search_radius ?? 50);
+  const toNum = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+  const [ageMin, setAgeMin] = useState(toNum(user?.age_min_filter, 18));
+  const [ageMax, setAgeMax] = useState(toNum(user?.age_max_filter, 35));
+  const [radius, setRadius] = useState(toNum(user?.search_radius, 50));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -325,7 +326,6 @@ export default function ListSettings() {
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>DECOUVERTE</Text>
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-          {/* Age filter header row */}
           <View style={[styles.row, { paddingBottom: 4 }]}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: PALETTE.rosePale }]}>
@@ -335,7 +335,6 @@ export default function ListSettings() {
             </View>
           </View>
 
-          {/* Age range steppers */}
           <View style={styles.ageRow}>
             <View style={styles.ageCol}>
               <Text style={[styles.ageColLabel, { color: colors.textSecondary }]}>De</Text>

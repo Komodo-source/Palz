@@ -432,7 +432,7 @@ export default function EventDetailScreen() {
         <View style={{ maxWidth: '72%' }}>
           {!isMe && isFirstInGroup && (
             <Text style={[styles.msgSenderName, { color: colors.textSecondary }]}>
-              {item.sender_name}
+              {safeStr(item.sender_name)}
             </Text>
           )}
           {isVoice ? (
@@ -715,7 +715,7 @@ export default function EventDetailScreen() {
         <View style={styles.navTitle}>
           <View style={[styles.navCatDot, { backgroundColor: meta.color }]} />
           <Text style={[styles.navTitleText, { color: colors.text }]} numberOfLines={1}>
-            {event?.title}
+            {safeStr(event?.title)}
           </Text>
         </View>
         <View style={{ width: 40 }} />

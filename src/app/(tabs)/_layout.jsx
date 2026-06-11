@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Slot, router, useSegments } from 'expo-router';
+import PagerView from 'react-native-pager-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth';
+import { hasCompletedOnboarding } from '@/utils/onboarding';
 import { messagesApi } from '@/services/api';
+import RenderErrorBoundary from '@/components/RenderErrorBoundary';
 
 // Always import screen components (they work on all platforms)
 import SwipeScreen from './index'; // kept in code but not shown in tab bar
@@ -28,6 +31,8 @@ const TABS = [
   { key: 'messages', title: 'Messages', icon: 'chatbubbles-outline' },
   { key: 'profile', title: 'Profil', icon: 'person-outline' },
 ];
+
+const SCREENS = [WallScreen, EventsScreen, GroupsScreen, MessagesScreen, ProfileScreen];
 
 function TabIcon({ name, focused, badge }) {
   const icons = {
@@ -106,30 +111,54 @@ function BottomTabBar({ activeIndex, onTabPress, colors, unreadCount }) {
   );
 }
 
-// ── Renders only the active screen (lazy load — inactive screens never mount) ──
-function ActiveScreen({ activeIndex }) {
-  if (activeIndex === 0) return <WallScreen />;
-  if (activeIndex === 1) return <EventsScreen />;
-  if (activeIndex === 2) return <GroupsScreen />;
-  if (activeIndex === 3) return <MessagesScreen />;
-  if (activeIndex === 4) return <ProfileScreen />;
-  return <EventsScreen />;
-}
-
 // ── Main Layout ──
 export default function TabsLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
   const segments = useSegments();
   const [unreadCount, setUnreadCount] = useState(0);
+  const pagerRef = useRef(null);
 
-  // Redirect to login if not authenticated (and not still loading)
+  const onboarded = hasCompletedOnboarding(user);
+
+  // Check if we're on a sub-route (chat, profil...) — render as stack (no tabs, no pager)
+  const isSubRoute =
+    segments.includes('chat') ||
+    segments.includes('profil') ||
+    segments.includes('user') ||
+    segments.includes('event') ||
+    segments.includes('settings');
+
+  const getActiveIndexFromPath = useCallback(() => {
+    const segment = segments[segments.length - 1];
+    const idx = TABS.findIndex((t) => t.key === segment);
+    return idx >= 0 ? idx : 0;
+  }, [segments]);
+
+  const [activeIndex, setActiveIndex] = useState(getActiveIndexFromPath());
+  // Lazy mount: a tab screen mounts on first visit (or when adjacent, so swiping
+  // reveals content instead of a blank page) and stays mounted afterwards.
+  const [visited, setVisited] = useState(() => new Set([getActiveIndexFromPath()]));
+
+  const markVisited = useCallback((index) => {
+    setVisited((prev) => {
+      if (prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  }, []);
+
+  // Redirect to login if not authenticated; to onboarding if profile incomplete.
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (isLoading) return;
+    if (!isAuthenticated) {
       router.replace('/(auth)/login');
+    } else if (!onboarded) {
+      router.replace('/onboarding');
     }
-  }, [isLoading, isAuthenticated]);
+  }, [isLoading, isAuthenticated, onboarded]);
 
   // Poll unread conversations count for the Messages tab badge
   useEffect(() => {
@@ -146,57 +175,76 @@ export default function TabsLayout() {
     return () => clearInterval(timer);
   }, [isAuthenticated]);
 
-  if (isLoading) return null;
-
-  // Check if we're on a sub-route (chat, profil) — render as stack (no tabs, no pager)
-  const isSubRoute = segments.includes('chat') || segments.includes('profil') || segments.includes('user') || segments.includes('event') || segments.includes('settings');
-
-  const getActiveIndexFromPath = useCallback(() => {
-    const segment = segments[segments.length - 1];
-    const idx = TABS.findIndex((t) => t.key === segment);
-    return idx >= 0 ? idx : 0;
-  }, [segments]);
-
-  const [activeIndex, setActiveIndex] = useState(getActiveIndexFromPath());
-
-  // Sync on segment changes (deep links, etc.)
+  // Sync on segment changes (deep links, etc.) — but never while a sub-route is
+  // shown, so the user comes back to the tab they left from.
   useEffect(() => {
+    if (isSubRoute) return;
     const idx = getActiveIndexFromPath();
     if (idx !== activeIndex) {
       setActiveIndex(idx);
+      markVisited(idx);
+      pagerRef.current?.setPageWithoutAnimation?.(idx);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segments]);
 
-  const handleTabPress = useCallback(
-    (index) => {
+  const goToTab = useCallback(
+    (index, fromSwipe = false) => {
       if (index === activeIndex) return;
       setActiveIndex(index);
-      const route = TABS[index].key;
-      router.replace(`/(tabs)/${route}`);
+      markVisited(index);
+      if (!fromSwipe) pagerRef.current?.setPage?.(index);
+      router.replace(`/(tabs)/${TABS[index].key}`);
     },
-    [activeIndex]
+    [activeIndex, markVisited]
   );
 
-  if (!isAuthenticated) return null;
+  if (isLoading) return null;
+  if (!isAuthenticated || !onboarded) return null;
 
   // Sub-routes (chat, profil): render as simple stack (no tab bar, no pager)
   if (isSubRoute) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Slot />
+        <RenderErrorBoundary name={`sub-route:${segments.join('/')}`}>
+          <Slot />
+        </RenderErrorBoundary>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Active screen (no swipe) */}
-      <ActiveScreen activeIndex={activeIndex} />
+      {/* Swipeable pages */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.container}
+        initialPage={activeIndex}
+        offscreenPageLimit={1}
+        onPageSelected={(e) => {
+          const index = e.nativeEvent.position;
+          if (index !== activeIndex) goToTab(index, true);
+        }}
+      >
+        {TABS.map((tab, index) => {
+          const Screen = SCREENS[index];
+          const shouldMount = visited.has(index) || Math.abs(index - activeIndex) <= 1;
+          return (
+            <View key={tab.key} style={styles.container} collapsable={false}>
+              {shouldMount ? (
+                <RenderErrorBoundary name={`tab:${tab.key}`}>
+                  <Screen />
+                </RenderErrorBoundary>
+              ) : null}
+            </View>
+          );
+        })}
+      </PagerView>
 
       {/* Bottom Tab Bar */}
       <BottomTabBar
         activeIndex={activeIndex}
-        onTabPress={handleTabPress}
+        onTabPress={goToTab}
         colors={colors}
         unreadCount={unreadCount}
       />

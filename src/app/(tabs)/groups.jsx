@@ -907,14 +907,16 @@ export default function GroupsScreen() {
               return (
                 <View key={sug.id} style={[styles.rendezvousSuggestion, { borderColor: isDark ? '#3D332E' : '#F0E0E0' }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.rendezvousLocation, { color: colors.text }]}>{sug.location}</Text>
+                    <Text style={[styles.rendezvousLocation, { color: colors.text }]}>
+                      {typeof sug.location === 'string' ? sug.location : ''}
+                    </Text>
                     {sug.time && (
                       <Text style={[styles.rendezvousTime, { color: colors.textSecondary }]}>
                         {formatDate(sug.time)} à {formatTime(sug.time)}
                       </Text>
                     )}
                     <Text style={[styles.rendezvousSuggestor, { color: colors.textSecondary }]}>
-                      Proposé par {sug.user_name}
+                      Proposé par {typeof sug.user_name === 'string' ? sug.user_name : ''}
                     </Text>
                   </View>
                   <TouchableOpacity

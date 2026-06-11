@@ -519,11 +519,8 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   headerBg: {
-    backgroundColor: PALETTE.rosePale,
     paddingTop: 60,
-    paddingBottom: 70,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
+    paddingBottom: 16,
   },
   header: {
     flexDirection: 'row',

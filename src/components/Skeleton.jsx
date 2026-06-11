@@ -249,6 +249,86 @@ export function GroupsSkeleton({ colors, isDark }) {
   );
 }
 
+// ── Events (Sorties) ──────────────────────────────────────────────
+export function EventsSkeleton({ colors, isDark }) {
+  const S = (props) => <SkeletonBox isDark={isDark} {...props} />;
+  const cardW = W - Spacing.four * 2;
+
+  return (
+    <SkeletonContainer style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Header: title + Créer button */}
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: Spacing.four,
+          paddingTop: 72,
+          paddingBottom: 8,
+        }}
+      >
+        <View style={{ gap: 6 }}>
+          <S width={120} height={34} borderRadius={8} />
+          <S width={140} height={14} borderRadius={6} />
+        </View>
+        <S width={96} height={40} borderRadius={16} />
+      </View>
+
+      {/* Filter chips row */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: Spacing.four, gap: 8, marginTop: 8 }}>
+        {[88, 76, 96, 104].map((w, i) => (
+          <S key={i} width={w} height={34} borderRadius={17} />
+        ))}
+      </View>
+
+      {/* Category chips row */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: Spacing.four, gap: 8, marginTop: 12 }}
+        scrollEnabled={false}
+      >
+        {[0, 1, 2, 3, 4].map((i) => (
+          <S key={i} width={92} height={38} borderRadius={19} />
+        ))}
+      </ScrollView>
+
+      {/* Event cards */}
+      <View style={{ paddingHorizontal: Spacing.four, gap: 14, marginTop: 16 }}>
+        {[0, 1, 2].map((i) => (
+          <View
+            key={i}
+            style={{
+              borderRadius: 22,
+              backgroundColor: colors.backgroundElement,
+              padding: 16,
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <S width={cardW * 0.5} height={18} borderRadius={8} />
+              <S width={64} height={26} borderRadius={13} />
+            </View>
+            <S width={cardW * 0.7} height={13} borderRadius={6} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <S width={14} height={14} borderRadius={7} />
+              <S width={cardW * 0.4} height={13} borderRadius={6} />
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', gap: -8 }}>
+                {[0, 1, 2].map((j) => (
+                  <S key={j} width={30} height={30} borderRadius={15} style={{ marginLeft: j === 0 ? 0 : -8 }} />
+                ))}
+              </View>
+              <S width={104} height={38} borderRadius={16} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </SkeletonContainer>
+  );
+}
+
 // ── User profile ──────────────────────────────────────────────────
 const GALLERY_H = Math.round(Dimensions.get('window').height * 0.74);
 

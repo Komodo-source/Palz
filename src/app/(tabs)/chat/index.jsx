@@ -85,7 +85,7 @@ export default function ChatListScreen() {
           </Text>
         </View>
         <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
-          {item.last_message?.content || 'Aucun message'}
+          {(typeof item.last_message?.content === 'string' && item.last_message.content) || 'Aucun message'}
         </Text>
       </View>
     </TouchableOpacity>
@@ -106,7 +106,7 @@ export default function ChatListScreen() {
       </View>
       <FlatList
         data={conversations}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         renderItem={renderConversation}
         contentContainerStyle={styles.list}
         refreshControl={

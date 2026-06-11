@@ -8,24 +8,17 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useStripe } from '@stripe/stripe-react-native';
+import Constants from 'expo-constants';
 import { paymentsApi } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import ConfettiCannon from '@/components/ConfettiCannon';
 
-// RFC 4122 UUID v4 — uses Hermes crypto.randomUUID() when available (RN 0.70+)
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
+// react-native-purchases native module is not available in Expo Go
+const isExpoGo = Constants.appOwnership === 'expo';
 
 const PALETTE = {
   rose: '#FF8FA3',
@@ -41,22 +34,29 @@ const PALETTE = {
 };
 
 const FEATURES = [
-  { icon: 'mic',       text: 'Une anecdote vocale pour se présenter' },
-  { icon: 'infinite',  text: 'Swipes illimités chaque jour' },
-  { icon: 'people',    text: 'Le dimanche : 5 profils avec ≥ 75% d\'affinité' },
-  { icon: 'chatbubble',text: 'Ice breaker pour une belle première phrase' },
-  { icon: 'star',      text: 'Badge Premium visible sur ton profil' },
+  { icon: 'mic',        text: 'Une anecdote vocale pour se présenter' },
+  { icon: 'infinite',   text: 'Swipes illimités chaque jour' },
+  { icon: 'people',     text: 'Le dimanche : 5 profils avec ≥ 75% d\'affinité' },
+  { icon: 'chatbubble', text: 'Ice breaker pour une belle première phrase' },
+  { icon: 'star',       text: 'Badge Premium visible sur ton profil' },
 ];
+
+// Opens the OS subscription management screen (App Store or Play Store)
+function openSubscriptionManagement() {
+  const url = Platform.OS === 'ios'
+    ? 'https://apps.apple.com/account/subscriptions'
+    : 'https://play.google.com/store/account/subscriptions';
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Erreur', 'Impossible d\'ouvrir la gestion des abonnements.');
+  });
+}
 
 export default function PayementPage() {
   const { user } = useAuth();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
-
-  const [status, setStatus] = useState('idle');      // idle | loading | success
+  const [status, setStatus] = useState('idle'); // idle | loading | success
   const [isPremium, setIsPremium] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
 
-  // Check current premium status on mount
   useEffect(() => {
     paymentsApi.getStatus()
       .then((res) => setIsPremium(res.data?.is_premium || false))
@@ -66,89 +66,63 @@ export default function PayementPage() {
 
   const handleBuyPremium = async () => {
     if (status === 'loading') return;
+
+    if (isExpoGo) {
+      Alert.alert(
+        'Non disponible dans Expo Go',
+        'Les achats in-app nécessitent une version complète de l\'application. Télécharge Palz depuis l\'App Store ou Google Play.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setStatus('loading');
 
-    // Fresh idempotency key per tap — the backend will detect any pending PI
-    // for this user and reuse it, so we never double-charge on timeout.
-    const idempotencyKey = generateUUID();
-
     try {
-      const sheetRes = await paymentsApi.createPaymentSheet({ idempotency_key: idempotencyKey });
-      const { paymentIntent, ephemeralKey, customer, activated } = sheetRes.data;
+      const Purchases = (await import('react-native-purchases')).default;
 
-      // Subscription was activated immediately (trial / auto-charge / $0)
-      if (activated) {
+      // Link this device's purchases to our user ID so the backend webhook
+      // receives the correct app_user_id
+      await Purchases.logIn(String(user.id));
+
+      const offerings = await Purchases.getOfferings();
+      const pkg = offerings.current?.monthly
+        ?? offerings.current?.availablePackages?.[0];
+
+      if (!pkg) {
+        setStatus('idle');
+        Alert.alert('Indisponible', 'L\'abonnement n\'est pas disponible pour le moment. Réessaie plus tard.');
+        return;
+      }
+
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+
+      if (customerInfo.entitlements.active['premium']) {
         setIsPremium(true);
         setStatus('success');
-        return;
-      }
-
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'Copines',
-        customerId: customer,
-        customerEphemeralKeySecret: ephemeralKey,
-        paymentIntentClientSecret: paymentIntent,
-        allowsDelayedPaymentMethods: false,
-        defaultBillingDetails: { name: user?.full_name || '' },
-        appearance: {
-          colors: {
-            primary: '#FF8FA3',
-            background: '#FFFFFF',
-            componentBackground: '#FFF9F5',
-            componentBorder: '#F0E0E0',
-            primaryText: '#4A3728',
-            secondaryText: '#7A6B60',
-          },
-        },
-      });
-
-      if (initError) {
+      } else {
         setStatus('idle');
-        Alert.alert('Erreur', initError.message);
-        return;
+        Alert.alert('Erreur', 'Paiement reçu mais l\'activation a échoué. Contacte le support.');
       }
-
-      // 3. Present the payment sheet to the user
-      const { error: payError } = await presentPaymentSheet();
-
-      if (payError) {
-        setStatus('idle');
-        if (payError.code !== 'Canceled') {
-          Alert.alert('Paiement échoué', payError.message);
-        }
-        return;
-      }
-
-      const piId = paymentIntent.split('_secret_')[0]; // extract PI id from client secret
-      await paymentsApi.confirm(piId);
-
-      setIsPremium(true);
-      setStatus('success');
     } catch (err) {
       setStatus('idle');
-      const msg = err?.response?.data?.error || 'Impossible de lancer le paiement. Réessaie.';
-      Alert.alert('Erreur', msg);
+      // err.userCancelled is true when the user dismisses the payment sheet
+      if (!err.userCancelled) {
+        console.log(err.message)
+        Alert.alert('Paiement échoué', err.message || 'Une erreur est survenue. Réessaie.');
+      }
     }
   };
 
-  const handleCancelSubscription = () => {
+  const handleManageSubscription = () => {
     Alert.alert(
-      'Annuler l\'abonnement',
-      'Tu perdras tous les avantages Premium à la fin de ta période en cours.',
+      'Gérer l\'abonnement',
+      'Tu peux annuler ou modifier ton abonnement depuis les réglages de l\'App Store / Google Play.',
       [
-        { text: 'Garder Premium', style: 'cancel' },
+        { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Annuler quand même',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await paymentsApi.cancel();
-              setIsPremium(false);
-              Alert.alert('Annulé', 'Ton abonnement a bien été annulé.');
-            } catch {
-              Alert.alert('Erreur', 'Impossible d\'annuler. Contacte le support.');
-            }
-          },
+          text: 'Ouvrir les réglages',
+          onPress: openSubscriptionManagement,
         },
       ]
     );
@@ -190,7 +164,7 @@ export default function PayementPage() {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelSubscription} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.cancelBtn} onPress={handleManageSubscription} activeOpacity={0.8}>
           <Text style={styles.cancelBtnText}>Gérer l'abonnement</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -203,35 +177,35 @@ export default function PayementPage() {
       <View style={{ flex: 1 }}>
         <ConfettiCannon firing />
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.successWrap}>
-          <View style={styles.successCircle}>
-            <Text style={styles.successEmoji}>🎉</Text>
-          </View>
-          <Text style={styles.successTitle}>Bienvenue Premium !</Text>
-          <Text style={styles.successSub}>
-            Ton paiement a été confirmé. Tous tes avantages sont maintenant actifs.
-          </Text>
+          <View style={styles.successWrap}>
+            <View style={styles.successCircle}>
+              <Text style={styles.successEmoji}>🎉</Text>
+            </View>
+            <Text style={styles.successTitle}>Bienvenue Premium !</Text>
+            <Text style={styles.successSub}>
+              Ton paiement a été confirmé. Tous tes avantages sont maintenant actifs.
+            </Text>
 
-          <View style={styles.featuresCard}>
-            {FEATURES.map((f, i) => (
-              <View key={i} style={styles.featureRow}>
-                <View style={[styles.featureIconWrap, { backgroundColor: PALETTE.rosePale }]}>
-                  <Ionicons name={f.icon} size={18} color={PALETTE.rose} />
+            <View style={styles.featuresCard}>
+              {FEATURES.map((f, i) => (
+                <View key={i} style={styles.featureRow}>
+                  <View style={[styles.featureIconWrap, { backgroundColor: PALETTE.rosePale }]}>
+                    <Ionicons name={f.icon} size={18} color={PALETTE.rose} />
+                  </View>
+                  <Text style={styles.featureText}>{f.text}</Text>
                 </View>
-                <Text style={styles.featureText}>{f.text}</Text>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
 
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => router.replace('/(tabs)/profile')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="sparkles" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Commencer</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => router.replace('/(tabs)/profile')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="sparkles" size={18} color="#fff" />
+              <Text style={styles.buttonText}>Commencer</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
     );
@@ -249,7 +223,6 @@ export default function PayementPage() {
         <Text style={styles.backText}>Retour</Text>
       </TouchableOpacity>
 
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.starBadge}>
           <Ionicons name="star" size={32} color={PALETTE.gold} />
@@ -258,7 +231,6 @@ export default function PayementPage() {
         <Text style={styles.headerSub}>Toutes les fonctionnalités, sans limite</Text>
       </View>
 
-      {/* Price card */}
       <View style={styles.priceCard}>
         <View style={styles.priceRow}>
           <Text style={styles.price}>8,99€</Text>
@@ -267,12 +239,17 @@ export default function PayementPage() {
         <Text style={styles.priceSub}>Sans engagement · Annulable à tout moment</Text>
         <View style={styles.priceDivider} />
         <View style={styles.trialRow}>
-          <Ionicons name="shield-checkmark-outline" size={16} color={PALETTE.rose} />
-          <Text style={styles.trialText}>Paiement 100% sécurisé via Stripe</Text>
+          <Ionicons
+            name={Platform.OS === 'ios' ? 'logo-apple' : 'logo-google-playstore'}
+            size={16}
+            color={PALETTE.rose}
+          />
+          <Text style={styles.trialText}>
+            Paiement sécurisé via {Platform.OS === 'ios' ? 'Apple Pay' : 'Google Pay'}
+          </Text>
         </View>
       </View>
 
-      {/* Features */}
       <View style={styles.featuresCard}>
         <Text style={styles.featuresTitle}>Ce qui est inclus</Text>
         {FEATURES.map((f, i) => (
@@ -285,7 +262,6 @@ export default function PayementPage() {
         ))}
       </View>
 
-      {/* CTA */}
       <TouchableOpacity
         style={[styles.button, status === 'loading' && styles.buttonLoading]}
         onPress={handleBuyPremium}
@@ -303,7 +279,7 @@ export default function PayementPage() {
       </TouchableOpacity>
 
       <Text style={styles.legalText}>
-        En continuant, tu acceptes nos conditions d'utilisation. L'abonnement est renouvelé automatiquement chaque mois. Tu peux annuler à tout moment.
+        En continuant, tu acceptes nos conditions d'utilisation. L'abonnement est renouvelé automatiquement chaque mois. Tu peux annuler à tout moment depuis les réglages de l'App Store ou Google Play.
       </Text>
     </ScrollView>
   );
@@ -314,15 +290,9 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PALETTE.cream },
   scrollContent: { paddingHorizontal: 22, paddingTop: Platform.OS === 'ios' ? 56 : 32, paddingBottom: 48 },
 
-  backRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 24,
-  },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 24 },
   backText: { fontSize: 15, fontWeight: '600', color: PALETTE.rose },
 
-  // ── Header ──
   header: { alignItems: 'center', gap: 10, marginBottom: 24 },
   starBadge: {
     width: 72, height: 72, borderRadius: 36,
@@ -332,7 +302,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, fontWeight: '800', color: PALETTE.textDark, letterSpacing: -0.5 },
   headerSub: { fontSize: 15, color: PALETTE.textMid, textAlign: 'center' },
 
-  // ── Price card ──
   priceCard: {
     backgroundColor: PALETTE.white,
     borderRadius: 22,
@@ -352,7 +321,6 @@ const styles = StyleSheet.create({
   trialRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' },
   trialText: { fontSize: 13, fontWeight: '600', color: PALETTE.textMid },
 
-  // ── Features ──
   featuresCard: {
     backgroundColor: PALETTE.white,
     borderRadius: 22,
@@ -370,7 +338,6 @@ const styles = StyleSheet.create({
   featureIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   featureText: { fontSize: 14, color: PALETTE.textMid, flex: 1, lineHeight: 20 },
 
-  // ── Button ──
   button: {
     height: 58,
     borderRadius: 20,
@@ -397,7 +364,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // ── Already premium ──
   premiumBadgeWrap: { alignItems: 'center', gap: 10, marginBottom: 24, marginTop: 8 },
   premiumBadge: {
     width: 88, height: 88, borderRadius: 44,
@@ -416,7 +382,6 @@ const styles = StyleSheet.create({
   },
   cancelBtnText: { fontSize: 14, fontWeight: '600', color: PALETTE.textLight },
 
-  // ── Success ──
   successWrap: { alignItems: 'center', gap: 16, paddingTop: 40 },
   successCircle: {
     width: 100, height: 100, borderRadius: 50,
