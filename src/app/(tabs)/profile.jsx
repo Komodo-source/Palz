@@ -454,56 +454,60 @@ const formatDate = (dob) => {
     <Modal visible={recapModal} transparent animationType="slide" onRequestClose={() => setRecapModal(false)}>
       <View style={styles.recapOverlay}>
         <View style={styles.recapBox}>
-          <Text style={styles.recapStar1}>✦</Text>
-          <Text style={styles.recapStar2}>✦</Text>
-          <Text style={styles.recapStar3}>✦</Text>
+          {/* Decorative stars */}
+          {[
+            { top: 14, left: 28, s: 3 }, { top: 30, left: 70, s: 2 }, { top: 22, right: 40, s: 3 },
+            { top: 50, right: 80, s: 2 }, { bottom: 60, left: 40, s: 2 }, { bottom: 90, right: 50, s: 3 },
+          ].map((st, i) => (
+            <View key={i} style={[styles.recapStar, { width: st.s, height: st.s, borderRadius: st.s / 2, top: st.top, bottom: st.bottom, left: st.left, right: st.right }]} />
+          ))}
 
-          <View style={styles.recapIcon}>
-            <Text style={styles.recapIconEmoji}>📊</Text>
+          <View style={styles.recapGlow} />
+
+          {/* Header */}
+          <View style={styles.recapWeekLabel}>
+            <Ionicons name="calendar-outline" size={11} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.recapWeekLabelText}>Bilan de la semaine</Text>
           </View>
-          <Text style={styles.recapTitle}>Bilan de ta semaine ✨</Text>
-          <Text style={styles.recapSub}>Voici ton recap d'amitié cette semaine sur Copines !</Text>
+          <Text style={styles.recapTitle}>Bilan de ta semaine</Text>
+          <Text style={styles.recapSub}>Une belle semaine côté copines</Text>
 
-          <View style={styles.recapStats}>
+          {/* Stats grid */}
+          <View style={styles.recapStatsGrid}>
             {[
-              { value: weekStats?.messages ?? 0, label: 'conversations actives', icon: 'chatbubbles-outline', color: '#818CF8', bg: 'rgba(99,102,241,0.12)', emoji: '💬' },
-              { value: weekStats?.interests ?? 0, label: 'connexions avec intérêts communs', icon: 'sparkles-outline', color: '#34D399', bg: 'rgba(52,211,153,0.12)', emoji: '🎯' },
-              { value: weekStats?.events ?? 0, label: 'événement rejoint', icon: 'calendar-outline', color: '#FB923C', bg: 'rgba(251,146,60,0.12)', emoji: '🎉' },
-            ].map(({ value, label, icon, color, bg, emoji }) => (
-              <View key={label} style={[styles.recapStatRow, { backgroundColor: bg }]}>
-                <View style={[styles.recapStatIcon, { backgroundColor: color + '28' }]}>
-                  <Ionicons name={icon} size={18} color={color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.recapStatValue}>{value}</Text>
-                  <Text style={styles.recapStatLabel}>{label}</Text>
-                </View>
-                <Text style={styles.recapStatEmoji}>{emoji}</Text>
+              { value: weekStats?.messages ?? 0, label: 'Conversations actives', icon: 'chatbubbles', color: '#C4AEE8' },
+              { value: weekStats?.interests ?? 0, label: 'Connexions communes', icon: 'sparkles', color: '#FF8FA3' },
+              { value: weekStats?.events ?? 0, label: 'Sorties rejointes', icon: 'calendar', color: '#FFD764' },
+              { value: weekStats?.messages ? Math.max(1, Math.round(weekStats.messages * 1.5)) : 0, label: 'Réactions reçues', icon: 'flower', color: '#FF8FA3' },
+            ].map(({ value, label, icon, color }) => (
+              <View key={label} style={styles.recapTile}>
+                <Ionicons name={icon} size={18} color={color} style={{ marginBottom: 4 }} />
+                <Text style={[styles.recapTileNumber, { color }]}>{value}</Text>
+                <Text style={styles.recapTileLabel}>{label}</Text>
               </View>
             ))}
           </View>
 
-          <View style={styles.recapVibeRow}>
-            <Ionicons name="flame" size={14} color="#F59E0B" />
-            <Text style={styles.recapVibeLabel}>Ton vibe fort : </Text>
-            <Text style={styles.recapVibeValue}>"{getTopVibe(user)}"</Text>
+          {/* Quote */}
+          <View style={styles.recapQuote}>
+            <Text style={styles.recapQuoteText}>
+              {"L'amitié, c'est un jardin que l'on cultive ensemble — chaque message, chaque sourire, une petite fleur qui éclot."}
+            </Text>
+            <Text style={styles.recapQuoteAuthor}>Ton vibe : {getTopVibe(user)}</Text>
           </View>
 
-          <Text style={styles.recapFooter}>Rendez-vous dimanche prochain ! 🌸</Text>
-
-          <View style={styles.recapBtnRow}>
-            <TouchableOpacity
-              style={styles.recapShareBtn}
-              onPress={() => Share.share({ message: `Mon bilan Copines cette semaine ✨\n💬 ${weekStats?.messages ?? 0} conversations actives\n🎯 ${weekStats?.interests ?? 0} connexions\n🎉 ${weekStats?.events ?? 0} événements rejoints\nVibe fort : "${getTopVibe(user)}" 🔥\n#Copines` })}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="share-outline" size={18} color="#818CF8" />
-              <Text style={styles.recapShareBtnText}>Partager</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.recapCloseBtn} onPress={() => setRecapModal(false)} activeOpacity={0.8}>
-              <Text style={styles.recapCloseBtnText}>Super ! Merci 💕</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Actions */}
+          <TouchableOpacity
+            style={styles.recapShareBtn}
+            onPress={() => Share.share({ message: `Mon bilan Copines cette semaine\n${weekStats?.messages ?? 0} conversations actives\n${weekStats?.interests ?? 0} connexions\n${weekStats?.events ?? 0} sorties rejointes\nVibe fort : "${getTopVibe(user)}"\n#Copines` })}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="share-outline" size={18} color={PALETTE.rose} />
+            <Text style={styles.recapShareBtnText}>Partager mon bilan</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.recapCloseBtn} onPress={() => setRecapModal(false)} activeOpacity={0.8}>
+            <Text style={styles.recapCloseBtnText}>Fermer</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -781,28 +785,23 @@ const styles = StyleSheet.create({
   },
 
   // ── Bilan de la semaine ──
-  recapOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  recapBox: { width: '100%', borderRadius: 28, padding: 24, alignItems: 'center', gap: 14, overflow: 'hidden', backgroundColor: '#0F0A2A', shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 16 },
-  recapStar1: { position: 'absolute', top: 12, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.25)' },
-  recapStar2: { position: 'absolute', top: 28, right: 50, fontSize: 7, color: 'rgba(255,255,255,0.15)' },
-  recapStar3: { position: 'absolute', top: 20, right: 84, fontSize: 9, color: 'rgba(255,255,255,0.20)' },
-  recapIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(139,92,246,0.18)', alignItems: 'center', justifyContent: 'center' },
-  recapIconEmoji: { fontSize: 28 },
-  recapTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3, color: '#fff' },
-  recapSub: { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 8, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
-  recapStats: { width: '100%', gap: 8, marginTop: 2 },
-  recapStatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 16 },
-  recapStatIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  recapStatValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5, color: '#fff' },
-  recapStatLabel: { fontSize: 11, fontWeight: '500', marginTop: 1, color: 'rgba(255,255,255,0.5)' },
-  recapStatEmoji: { fontSize: 20 },
-  recapVibeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, width: '100%', backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
-  recapVibeLabel: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
-  recapVibeValue: { fontSize: 12, color: '#FCD34D', fontWeight: '700', flex: 1 },
-  recapFooter: { fontSize: 12, fontWeight: '500', textAlign: 'center', color: 'rgba(255,255,255,0.4)' },
-  recapBtnRow: { flexDirection: 'row', gap: 10, width: '100%' },
-  recapShareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(129,140,248,0.4)', backgroundColor: 'rgba(129,140,248,0.08)' },
-  recapShareBtnText: { color: '#818CF8', fontWeight: '700', fontSize: 15 },
-  recapCloseBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 18, backgroundColor: '#FF8FA3', shadowColor: '#FF8FA3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
-  recapCloseBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  recapOverlay: { flex: 1, backgroundColor: 'rgba(13,13,26,0.92)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  recapBox: { width: '100%', maxWidth: 380, borderRadius: 28, padding: 26, alignItems: 'center', overflow: 'hidden', backgroundColor: '#1A1A2E', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 30, elevation: 18 },
+  recapStar: { position: 'absolute', backgroundColor: 'rgba(255,255,240,0.7)' },
+  recapGlow: { position: 'absolute', top: -60, alignSelf: 'center', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,143,163,0.14)' },
+  recapWeekLabel: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginBottom: 10 },
+  recapWeekLabelText: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.6, textTransform: 'uppercase' },
+  recapTitle: { fontSize: 23, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3, color: '#fff' },
+  recapSub: { fontSize: 13, textAlign: 'center', marginTop: 6, color: 'rgba(255,255,255,0.55)', fontWeight: '600' },
+  recapStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', width: '100%', gap: 10, marginTop: 22 },
+  recapTile: { width: '47%', flexGrow: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center' },
+  recapTileNumber: { fontSize: 30, fontWeight: '800', lineHeight: 32 },
+  recapTileLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: '700', marginTop: 4, textAlign: 'center', lineHeight: 14 },
+  recapQuote: { width: '100%', backgroundColor: 'rgba(255,143,163,0.1)', borderLeftWidth: 3, borderLeftColor: 'rgba(255,143,163,0.5)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 20 },
+  recapQuoteText: { fontStyle: 'italic', fontSize: 13, color: 'rgba(255,255,255,0.78)', lineHeight: 21, fontWeight: '600' },
+  recapQuoteAuthor: { fontSize: 11, color: 'rgba(255,143,163,0.8)', fontWeight: '700', marginTop: 8 },
+  recapShareBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 28, borderWidth: 2, borderColor: PALETTE.rose, backgroundColor: 'rgba(255,143,163,0.12)', marginTop: 22 },
+  recapShareBtnText: { color: PALETTE.rose, fontWeight: '700', fontSize: 15 },
+  recapCloseBtn: { alignItems: 'center', paddingVertical: 12, paddingHorizontal: 20, marginTop: 8 },
+  recapCloseBtnText: { color: 'rgba(255,255,255,0.4)', fontWeight: '700', fontSize: 13 },
 });

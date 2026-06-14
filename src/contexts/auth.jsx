@@ -102,12 +102,24 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (data) => {
     const res = await authApi.login(data);
-    const { user: newUser, token: newToken } = res.data;
+    const { token: newToken } = res.data;
+    let newUser = res.data.user;
 
+    // Persist the token first so the request interceptor can authenticate /auth/me.
     await storage.setItem('auth_token', newToken);
-    await storage.setItem('auth_user', JSON.stringify(newUser));
-
     setToken(newToken);
+
+    // The /auth/login payload can omit fields (e.g. `interests`) that the onboarding
+    // gate relies on, which would wrongly bounce an onboarded user to /onboarding.
+    // Fetch the full profile so the gate evaluates against complete data.
+    try {
+      const meRes = await authApi.me();
+      if (meRes.data?.user) newUser = meRes.data.user;
+    } catch {
+      // Fall back to the login payload if /auth/me is unavailable.
+    }
+
+    await storage.setItem('auth_user', JSON.stringify(newUser));
     setUser(newUser);
 
     registerForPushNotifications().catch(() => {});

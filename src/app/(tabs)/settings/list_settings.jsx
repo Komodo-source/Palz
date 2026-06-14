@@ -640,7 +640,7 @@ export default function ListSettings() {
 
           <TouchableOpacity
             style={styles.row}
-            onPress={() => handleOpenUrl('https://copines-app.fr/')}
+            onPress={() => handleOpenUrl('https://copines-app.fr/rgpd')}
             activeOpacity={0.7}
           >
             <View style={styles.rowLeft}>

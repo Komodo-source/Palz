@@ -92,13 +92,20 @@ const SUPABASE_STORAGE_URL = `${SUPABASE_BASE_URL}/storage/v1/object/public`;
  * Determines the bucket from the filename prefix (img_ → images, audio_ → audio).
  */
 export const getStorageUrl = (storedValue) => {
-  if (!storedValue) return '';
+  // media_url / profile_image come from jsonb columns, so they can arrive as an
+  // array, an object, or null — not just a string. Normalize to a single string
+  // before calling string methods (otherwise `.startsWith` throws).
+  let value = storedValue;
+  if (Array.isArray(value)) value = value[0];
+  if (value && typeof value === 'object') value = value.url ?? value.uri ?? '';
+  if (typeof value !== 'string' || !value) return '';
+
   // Already a full URL (e.g. Supabase public URL)
-  if (storedValue.startsWith('http')) return storedValue;
+  if (value.startsWith('http')) return value;
 
   // Map filename prefixes to actual Supabase bucket names
-  const bucket = storedValue.startsWith('audio_') ? 'audio_users' : 'user_photos';
-  return `${SUPABASE_STORAGE_URL}/${bucket}/${storedValue}`;
+  const bucket = value.startsWith('audio_') ? 'audio_users' : 'user_photos';
+  return `${SUPABASE_STORAGE_URL}/${bucket}/${value}`;
 };
 
 export const uploadApi = {
@@ -244,7 +251,8 @@ export const messagesApi = {
 export const wallApi = {
   getTheme: () => api.get('/wall/theme'),
   getPosts: () => api.get('/wall/posts'),
-  createPost: (wallPhoto) => api.post('/wall/post', { wall_photo: wallPhoto }),
+  // NSFW moderation runs synchronously server-side, so allow a longer timeout
+  createPost: (wallPhoto) => api.post('/wall/post', { wall_photo: wallPhoto }, { timeout: 60000 }),
   deletePost: (postId) => api.delete(`/wall/post/${postId}`),
   reactToPost: (postId) => api.post(`/wall/post/${postId}/react`),
   getUserPosts: (userId) => api.get(`/wall/user/${userId}/posts`),

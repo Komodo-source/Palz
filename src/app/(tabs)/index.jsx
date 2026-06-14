@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { usersApi, swipesApi } from '@/services/api';
@@ -164,6 +165,10 @@ function SwipeCard({ user, onSwipe, isTop }) {
 
   const panGesture = Gesture.Pan()
     .enabled(isTop)
+    // Only claim horizontal drags; let vertical drags fall through to the
+    // ScrollView so pull-to-refresh works when swiping down on a card.
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-12, 12])
     .onUpdate((e) => {
       translateX.value = e.translationX;
       translateY.value = e.translationY * 0.5;
@@ -466,7 +471,6 @@ export default function SwipeScreen() {
   }
 
   return (
-    {/*
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <View>
@@ -478,6 +482,20 @@ export default function SwipeScreen() {
         </TouchableOpacity>
       </View>
 
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={PALETTE.rose}
+            colors={[PALETTE.rose]}
+          />
+        }
+      >
       <View style={styles.cardStack}>
         {users.length === 0 ? (
           <View style={styles.emptyState}>
@@ -522,7 +540,8 @@ export default function SwipeScreen() {
             })
         )}
       </View>
-    </View>*/}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -568,8 +587,15 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
   },
-  cardStack: {
+  scroll: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  cardStack: {
+    minHeight: CARD_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: Spacing.four,

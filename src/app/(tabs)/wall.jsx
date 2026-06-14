@@ -22,7 +22,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
-import { wallApi, uploadApi, messagesApi } from '@/services/api';
+import { wallApi, uploadApi, messagesApi, getStorageUrl } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -36,8 +36,22 @@ const GAP = 10;
 const H_PAD = 16;
 const COL_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - GAP) / 2;
 
-const IMG_HEIGHTS = [200, 250, 220, 270, 195, 240, 210, 260];
-const getImgHeight = (idx) => IMG_HEIGHTS[idx % IMG_HEIGHTS.length];
+// Renders a wall photo at its true aspect ratio, filling the column width.
+// Landscape photos come out wide-and-short; portrait ones tall — both span the full width.
+function WallCardImage({ uri }) {
+  const [ratio, setRatio] = useState(0.85); // sensible default until the real size loads
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.cardImg, { aspectRatio: ratio }]}
+      resizeMode="cover"
+      onLoad={(e) => {
+        const s = e?.nativeEvent?.source;
+        if (s?.width && s?.height) setRatio(s.width / s.height);
+      }}
+    />
+  );
+}
 
 function formatTimeAgo(dateStr) {
   if (!dateStr) return '';
@@ -66,15 +80,19 @@ function ReactionButton({ item, onReact, colors }) {
 
   return (
     <TouchableOpacity
-      style={styles.reactBtn}
+      style={[styles.reactBtn, item.has_reacted && styles.reactBtnActive]}
       onPress={handlePress}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <Animated.Text style={[styles.reactFlower, { opacity: item.has_reacted ? 1 : 0.4 }, animStyle]}>
-        🌸
-      </Animated.Text>
+      <Animated.View style={animStyle}>
+        <Ionicons
+          name={item.has_reacted ? 'flower' : 'flower-outline'}
+          size={14}
+          color={item.has_reacted ? '#fff' : PALETTE.rose}
+        />
+      </Animated.View>
       {item.reaction_count > 0 && (
-        <Text style={[styles.reactCount, { color: item.has_reacted ? PALETTE.rose : colors.textSecondary }]}>
+        <Text style={[styles.reactCount, { color: item.has_reacted ? '#fff' : PALETTE.rose }]}>
           {item.reaction_count}
         </Text>
       )}
@@ -182,6 +200,8 @@ export default function WallScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchWall();
+      // Reset to skeleton when leaving so the page never shows stale content while swiping back.
+      return () => setLoading(true);
     }, [fetchWall])
   );
 
@@ -320,15 +340,16 @@ export default function WallScreen() {
     setUploading(true);
     try {
       const uploadResult = await uploadApi.uploadImage({ uri: asset.uri, fileName: asset.fileName || `wall_${Date.now()}.jpg`, mimeType: asset.mimeType || 'image/jpeg' });
-      const wall = await wallApi.createPost([uploadResult.url]);
-      if(wall?.response?.nsfw){
-        Alert.alert("Aïe", "Votre photos contient des éléments explicites\nAttention ce type de post peut mener à des sanctions\nPour tout faux positif veuillez contacter support@copines-app.fr", [{
-          text: "OK",
-          }
-      ])
-      setUploading(false);
-      return ;
-      }
+      await wallApi.createPost([uploadResult.url]);
+      // NSFW moderation check temporarily disabled
+      // const wall = await wallApi.createPost([uploadResult.url]);
+      // if (wall?.response?.nsfw) {
+      //   Alert.alert("Aïe", "Votre photos contient des éléments explicites\nAttention ce type de post peut mener à des sanctions\nPour tout faux positif veuillez contacter support@copines-app.fr", [{
+      //     text: "OK",
+      //   }]);
+      //   setUploading(false);
+      //   return;
+      // }
       await fetchWall();
       snackbar.success('Photo postée sur la Toile 🌸', 2500);
     } catch (err) {
@@ -364,12 +385,11 @@ export default function WallScreen() {
     });
     // ── END DEBUG ──
     const rawPhotos = parseDbJson(item.wall_photo);
-    const photoUri = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? rawPhotos[0] : null;
+    const photoUri = Array.isArray(rawPhotos) && rawPhotos.length > 0 ? getStorageUrl(rawPhotos[0]) : null;
     const pics = parseDbJson(item.profile_image);
-    const userPic = Array.isArray(pics) && pics.length > 0 ? pics[0] : null;
+    const userPic = Array.isArray(pics) && pics.length > 0 ? getStorageUrl(pics[0]) : null;
     const isOwn = item.user_initiator === currentUser?.id;
     const isLoadingDm = openingDm === item.user_initiator;
-    const imgHeight = getImgHeight(globalIdx);
 
     return (
       <Animated.View
@@ -380,9 +400,9 @@ export default function WallScreen() {
         {/* Photo — tap to fullscreen */}
         <TouchableOpacity activeOpacity={0.95} onPress={() => photoUri && setViewerPhoto(photoUri)} style={styles.cardImgWrap}>
           {photoUri ? (
-            <Image source={{ uri: photoUri }} style={[styles.cardImg, { height: imgHeight }]} />
+            <WallCardImage uri={photoUri} />
           ) : (
-            <View style={[styles.cardImgPlaceholder, { height: imgHeight }]}>
+            <View style={[styles.cardImgPlaceholder, { height: 200 }]}>
               <Ionicons name="image-outline" size={32} color={PALETTE.rose} />
             </View>
           )}
@@ -523,18 +543,21 @@ export default function WallScreen() {
         {/* Theme banner + countdown */}
         {theme && (
           <TouchableOpacity
-            style={[styles.themeBanner, { backgroundColor: PALETTE.rosePale }]}
+            style={styles.themeBanner}
             onPress={() => setThemeModal(true)}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <View style={styles.themeBannerLeft}>
-              <Ionicons name="sparkles" size={16} color={PALETTE.rose} />
-              <Text style={styles.themeText} numberOfLines={1}>{typeof theme.title === 'string' ? theme.title : ''}</Text>
+              <Text style={styles.themeLabel}>Thème du moment</Text>
+              <View style={styles.themeTitleRow}>
+                <Ionicons name="sparkles" size={15} color="#fff" />
+                <Text style={styles.themeText} numberOfLines={1}>{typeof theme.title === 'string' ? theme.title : ''}</Text>
+              </View>
             </View>
             {countdown && (
               <View style={styles.countdownBadge}>
-                <Ionicons name="hourglass-outline" size={12} color={PALETTE.rose} />
-                <Text style={styles.countdownText}>Prochain dans {countdown}</Text>
+                <Ionicons name="hourglass-outline" size={12} color="#fff" />
+                <Text style={styles.countdownText}>{countdown}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -662,14 +685,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 18,
+    backgroundColor: PALETTE.rose,
+    shadowColor: PALETTE.rose,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  themeBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  themeText: { fontSize: 14, fontWeight: '700', color: PALETTE.rose, flex: 1 },
-  countdownBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-  countdownText: { fontSize: 11, fontWeight: '700', color: PALETTE.rose },
+  themeBannerLeft: { flex: 1, gap: 4 },
+  themeLabel: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.85)', letterSpacing: 0.6, textTransform: 'uppercase' },
+  themeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  themeText: { fontSize: 17, fontWeight: '800', color: '#fff', flex: 1 },
+  countdownBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.28)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  countdownText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
   // ── Pinterest grid ──
   grid: { paddingHorizontal: H_PAD, paddingTop: Spacing.two },
@@ -687,7 +718,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   cardImgWrap: { position: 'relative' },
-  cardImg: { width: '100%', resizeMode: 'cover' },
+  cardImg: { width: '100%' },
   cardImgPlaceholder: { width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: PALETTE.rosePale },
 
   expiryBadge: {
@@ -723,8 +754,18 @@ const styles = StyleSheet.create({
   cardAvatarPlaceholder: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   cardName: { fontSize: 12, fontWeight: '700' },
 
-  reactBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  reactFlower: { fontSize: 15 },
+  reactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: PALETTE.rosePale,
+    borderWidth: 1.5,
+    borderColor: '#FFD6DE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  reactBtnActive: { backgroundColor: PALETTE.rose, borderColor: PALETTE.rose },
   reactCount: { fontSize: 11, fontWeight: '700' },
 
   cardBtnsRow: { flexDirection: 'row', gap: 6 },

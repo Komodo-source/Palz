@@ -31,6 +31,24 @@ import { GroupsSkeleton } from '@/components/Skeleton';
 
 const OUTDOOR_KEYWORDS = ['sport', 'plage', 'parc', 'balade', 'randon', 'extérieur', 'jardin', 'nature', 'piscine', 'forêt', 'vélo'];
 
+// New circles form at the start of each week (next Monday, 00:00 local).
+function getNextGroupCountdown() {
+  const now = new Date();
+  const day = now.getDay(); // 0 = Sun … 6 = Sat
+  let daysUntil = (8 - day) % 7; // days until next Monday
+  if (daysUntil === 0) daysUntil = 7; // today is Monday → next one is in a week
+  const target = new Date(now);
+  target.setDate(now.getDate() + daysUntil);
+  target.setHours(0, 0, 0, 0);
+  const diff = Math.max(0, target - now);
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+  };
+}
+
 function isOutdoorActivity(activity) {
   const text = ((activity?.title ?? '') + ' ' + (activity?.description ?? '') + ' ' + (activity?.tag ?? '')).toLowerCase();
   return OUTDOOR_KEYWORDS.some((k) => text.includes(k));
@@ -64,6 +82,13 @@ function formatTime(dateStr) {
 }
 
 const GV_WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+
+// Resolve a member's first profile photo to a full URL, or null so the default placeholder shows.
+function firstAvatarUrl(imageField) {
+  const arr = parseDbJson(imageField);
+  const pic = Array.isArray(arr) && arr.length > 0 ? arr[0] : null;
+  return pic ? getStorageUrl(pic) : null;
+}
 
 
 const openMapWithSearch = (searchQuery) => {
@@ -199,6 +224,7 @@ export default function GroupsScreen() {
   const [openingDm, setOpeningDm] = useState(null); // memberId being loaded
   const [votingActivity, setVotingActivity] = useState(null); // index being voted
   const isDark = colorScheme === 'dark';
+  const [nextGroupIn, setNextGroupIn] = useState(getNextGroupCountdown);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -247,6 +273,14 @@ export default function GroupsScreen() {
     }
   }, []);
 
+  // Live countdown to the next weekly circle — only ticks while the user has no group
+  useEffect(() => {
+    if (group) return;
+    setNextGroupIn(getNextGroupCountdown());
+    const timer = setInterval(() => setNextGroupIn(getNextGroupCountdown()), 1000);
+    return () => clearInterval(timer);
+  }, [group]);
+
   const fetchMessages = useCallback(async () => {
     if (!group?.id) return;
     try {
@@ -262,6 +296,8 @@ export default function GroupsScreen() {
     useCallback(() => {
       fetchGroup();
       fetchWeather();
+      // Reset to skeleton when leaving so the page never shows stale content while swiping back.
+      return () => setLoading(true);
     }, [fetchGroup, fetchWeather])
   );
 
@@ -302,6 +338,7 @@ export default function GroupsScreen() {
       'Signaler le groupe',
       'Pourquoi veux-tu signaler ce groupe ?',
       [
+
         ...reasons.map((reason) => ({
           text: reason,
           onPress: async () => {
@@ -438,6 +475,13 @@ export default function GroupsScreen() {
         fileName: `voice_${Date.now()}.m4a`,
         mimeType: 'audio/m4a',
       });
+      console.log("audio sent");
+      console.log("data_send_group: ", {
+        weekly_group_id: group.id,
+        content: '',
+        message_type: 'voice',
+        media_url: url,
+      })
       await groupsApi.sendMessage({
         weekly_group_id: group.id,
         content: '',
@@ -751,9 +795,7 @@ export default function GroupsScreen() {
 
                 <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dissStyles.membersList}>
                   {otherMembers.map((member) => {
-                    const pic = Array.isArray(parseDbJson(member.profile_image))
-                      ? parseDbJson(member.profile_image)[0]
-                      : null;
+                    const pic = firstAvatarUrl(member.profile_image);
                     const ratings = memberRatings[member.id] || { want_again: 0, comfort: 0, in_common: 0 };
 
                     return (
@@ -854,12 +896,82 @@ export default function GroupsScreen() {
     const members = group.members || [];
     const voteSummary = group.vote_summary || { continue: 0, disband: 0, total: 0 };
 
+    // Interest chips derived from members' vibe labels
+    const interestChips = [];
+    members.forEach((m) => {
+      const lbl = m.labels && typeof m.labels === 'object' ? m.labels : {};
+      (Array.isArray(lbl.vibe) ? lbl.vibe : []).forEach((v) => {
+        if (typeof v === 'string' && !interestChips.includes(v)) interestChips.push(v);
+      });
+    });
+    let compatPct = null;
+    if (group.compatibility_score != null) {
+      compatPct = Math.round(group.compatibility_score * 100);
+    } else {
+      const parts = [group.psych_score, group.pref_score, group.behav_score].filter((v) => v != null);
+      if (parts.length) compatPct = Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 100);
+    }
+
     return (
       <ScrollView style={styles.groupContent} showsVerticalScrollIndicator={false}>
-        {/* Common interest + compatibility */}
-        <View style={[styles.interestCard, { backgroundColor: PALETTE.rosePale }]}>
-          <Ionicons name="sparkles" size={20} color={PALETTE.rose} />
-          <Text style={styles.interestText}>{safeStr(group.common_interest, 'Groupe hebdomadaire')}</Text>
+        {/* ── Hero group card ── */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroBlobA} />
+          <View style={styles.heroBlobB} />
+
+          <View style={styles.heroHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroWeekLabel}>
+                Semaine du {formatDate(group.week_start)}
+              </Text>
+              <Text style={styles.heroName} numberOfLines={1}>
+                {safeStr(group.common_interest, 'Ton cercle')}
+              </Text>
+            </View>
+            {compatPct != null && (
+              <View style={styles.heroCompatBadge}>
+                <Ionicons name="heart" size={12} color="#fff" />
+                <Text style={styles.heroCompatText}>{compatPct}% compatibles</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Avatars with names */}
+          <View style={styles.heroAvatarsRow}>
+            {members.slice(0, 5).map((member) => {
+              const isSelf = member.id === currentUser?.id;
+              const pic = firstAvatarUrl(member.profile_image);
+              const revealed = isSelf || revealLevel >= 1;
+              const firstName = String(member.full_name || member.user_name || '?').split(' ')[0];
+              return (
+                <View key={member.id} style={styles.heroAvatarCol}>
+                  <View style={styles.heroAvatarWrap}>
+                    {revealed && pic ? (
+                      <Image source={{ uri: pic }} style={styles.heroAvatar} />
+                    ) : (
+                      <View style={[styles.heroAvatar, styles.heroAvatarLocked]}>
+                        <Ionicons name="lock-closed" size={16} color="rgba(255,255,255,0.85)" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.heroAvatarName} numberOfLines={1}>
+                    {revealed ? firstName : '???'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Interest chips */}
+          {interestChips.length > 0 && (
+            <View style={styles.heroChipsRow}>
+              {interestChips.slice(0, 4).map((chip) => (
+                <View key={chip} style={styles.heroChip}>
+                  <Text style={styles.heroChipText}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Compatibility breakdown */}
@@ -958,7 +1070,7 @@ export default function GroupsScreen() {
               )}
             </View>
             <Text style={[styles.voteQuestion, { color: colors.textSecondary, marginBottom: 12 }]}>
-              Sélectionnées d'après vos sports et passions communs
+              Sélectionnées pour vous et votre cercle
             </Text>
             {group.activity_suggestions.map((activity, index) => {
               const voteCount = group.activity_votes?.counts?.[index] || 0;
@@ -1013,6 +1125,7 @@ export default function GroupsScreen() {
                 </TouchableOpacity>
               );
             })}
+            <Text style={{fontStyle: "italic", color: colors.textSecondary}}>Pour plus d'info cliquez sur une des idée</Text>
           </View>
         )}
 
@@ -1034,8 +1147,7 @@ export default function GroupsScreen() {
           <View style={styles.membersList}>
             {members.map((member) => {
               const isSelf = member.id === currentUser?.id;
-              const memberPicRaw = parseDbJson(member.profile_image);
-              const memberPic = Array.isArray(memberPicRaw) ? memberPicRaw[0] : null;
+              const memberPic = firstAvatarUrl(member.profile_image);
               const showPhoto = isSelf || revealLevel >= 1;
               const showFullName = isSelf || revealLevel >= 1;
               const showLocation = isSelf || revealLevel >= 2;
@@ -1056,7 +1168,7 @@ export default function GroupsScreen() {
                     <View style={[styles.memberAvatarPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
                       {showPhoto
                         ? <Ionicons name="person" size={18} color={PALETTE.rose} />
-                        : <Text style={{ fontSize: 18 }}>🌸</Text>
+                        : <Ionicons name="lock-closed" size={16} color={PALETTE.rose} />
                       }
                     </View>
                   )}
@@ -1143,7 +1255,7 @@ export default function GroupsScreen() {
                 Qui veux-tu garder dans le groupe la semaine prochaine ?
               </Text>
               {members.filter((m) => m.id !== currentUser?.id).map((member) => {
-                const memberPic = Array.isArray(parseDbJson(member.profile_image)) ? parseDbJson(member.profile_image)[0] : null;
+                const memberPic = firstAvatarUrl(member.profile_image);
                 const vote = memberVotes[member.id];
                 return (
                   <View key={member.id} style={styles.memberVoteRow}>
@@ -1547,17 +1659,51 @@ export default function GroupsScreen() {
         </Text>        </View>
 
       {!group ? (
-        /* No group - show generate button */
+        /* No group - countdown to next weekly circle */
         <View style={styles.emptyState}>
           <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
             <Ionicons name="people-outline" size={48} color={PALETTE.rose} />
           </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            Pas de cercle cette semaine
+            Ton groupe arrive bientôt
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            On va te trouver un cercle avec des personnes qui te ressemblent, proches de chez toi !
+            Chaque semaine, on forme un nouveau groupe avec des personnes qui te ressemblent. Reviens dimanche pour rencontrer tes nouvelles copines !
           </Text>
+
+          {/* Countdown card to the next weekly circle */}
+          <View style={[styles.countdownCard, { backgroundColor: colors.backgroundElement }]}>
+            <View style={styles.countdownCardAccent} />
+            <Text style={[styles.countdownLabel, { color: colors.textSecondary }]}>
+              Prochain groupe dans
+            </Text>
+            <View style={styles.countdownRow}>
+              {[
+                { value: nextGroupIn.days, label: 'jours' },
+                { value: nextGroupIn.hours, label: 'heures' },
+                { value: nextGroupIn.minutes, label: 'mins' },
+              ].map((unit, i) => (
+                <React.Fragment key={unit.label}>
+                  {i > 0 && <Text style={[styles.countdownSep, { color: PALETTE.rose }]}>·</Text>}
+                  <View style={styles.countdownUnit}>
+                    <Text style={[styles.countdownValue, { color: PALETTE.rose }]}>
+                      {String(unit.value).padStart(2, '0')}
+                    </Text>
+                    <Text style={[styles.countdownUnitLabel, { color: colors.textSecondary }]}>
+                      {unit.label}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+            <View style={styles.countdownNote}>
+              <View style={styles.pulseDot} />
+              <Text style={[styles.countdownNoteText, { color: colors.textSecondary }]}>
+                Mise à jour chaque dimanche à minuit
+              </Text>
+            </View>
+          </View>
+
           <TouchableOpacity
             style={styles.generateButton}
             onPress={handleGenerate}
@@ -1572,6 +1718,17 @@ export default function GroupsScreen() {
                 <Text style={styles.generateButtonText}>Créer mon cercle</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.exploreButton, { borderColor: PALETTE.rose }]}
+            onPress={() => router.push('/(tabs)/events')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="compass-outline" size={18} color={PALETTE.rose} />
+            <Text style={[styles.exploreButtonText, { color: PALETTE.rose }]}>
+              En attendant, explore les sorties
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -1698,6 +1855,94 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+  // ── Countdown ──
+  countdownCard: {
+    width: '100%',
+    borderRadius: 24,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginTop: Spacing.two,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  countdownCardAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: PALETTE.rose,
+  },
+  countdownLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  countdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 10,
+  },
+  countdownUnit: {
+    minWidth: 54,
+    alignItems: 'center',
+  },
+  countdownSep: {
+    fontSize: 30,
+    fontWeight: '800',
+    opacity: 0.4,
+    marginBottom: 12,
+  },
+  countdownValue: {
+    fontSize: 38,
+    fontWeight: '800',
+    letterSpacing: -1,
+    fontVariant: ['tabular-nums'],
+  },
+  countdownUnitLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: 2,
+  },
+  countdownNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: PALETTE.rose,
+  },
+  countdownNoteText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  exploreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three - 2,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginTop: 4,
+  },
+  exploreButtonText: {
+    fontWeight: '700',
+    fontSize: 14,
+  },
   // ── Group Container ──
   groupContainer: {
     flex: 1,
@@ -1728,6 +1973,100 @@ const styles = StyleSheet.create({
   groupContent: {
     flex: 1,
   },
+  // ── Hero group card ──
+  heroCard: {
+    marginHorizontal: Spacing.four,
+    marginTop: Spacing.three,
+    borderRadius: 24,
+    padding: 20,
+    backgroundColor: '#8B6FB8',
+    overflow: 'hidden',
+    shadowColor: '#7B61A8',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  heroBlobA: {
+    position: 'absolute',
+    top: -30,
+    right: -30,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,143,163,0.30)',
+  },
+  heroBlobB: {
+    position: 'absolute',
+    bottom: -24,
+    left: 24,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  heroHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 16,
+  },
+  heroWeekLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.75)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+    marginBottom: 4,
+  },
+  heroName: { fontSize: 19, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
+  heroCompatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  heroCompatText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  heroAvatarsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  heroAvatarCol: { alignItems: 'center', width: 60 },
+  heroAvatarWrap: { marginBottom: 4 },
+  heroAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(80,50,120,0.5)',
+  },
+  heroAvatarLocked: { backgroundColor: 'rgba(80,50,120,0.6)' },
+  heroAvatarName: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  heroChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  heroChip: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  heroChipText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   // ── Cards ──
   interestCard: {
     flexDirection: 'row',

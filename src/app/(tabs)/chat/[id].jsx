@@ -1,31 +1,31 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Image,
-  Alert,
-  Dimensions,
-  Animated,
-  Modal,
-} from 'react-native';
-import { useLocalSearchParams, Stack, router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import { messagesApi, usersApi, uploadApi, getStorageUrl } from '@/services/api';
+import ImageViewerModal from '@/components/ImageViewerModal';
+import { getColors, PALETTE } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getColors, Spacing, PALETTE } from '@/constants/theme';
+import { getStorageUrl, messagesApi, uploadApi, usersApi } from '@/services/api';
 import { parseDbJson } from '@/utils/parsers';
-import { useAudioRecorder, useAudioRecorderState, useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ImageViewerModal from '@/components/ImageViewerModal';
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
+import * as ImagePicker from 'expo-image-picker';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMG_BUBBLE_W = SCREEN_WIDTH * 0.6;
@@ -57,7 +57,59 @@ function isSameDay(a, b) {
     && da.getDate() === db.getDate();
 }
 
-const WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+let WAVEFORM = [4, 7, 12, 8, 16, 10, 6, 14, 9, 13, 7, 11, 16, 5, 10, 13, 8, 15, 11, 6];
+
+// Short, type-aware preview of a quoted message (used in both the reply banner
+// and the in-bubble quote).
+function replySnippet(type, content) {
+  if (type === 'image') return '📷 Photo';
+  if (type === 'voice') return '🎤 Message vocal';
+  return typeof content === 'string' ? content : '';
+}
+
+// The quoted message shown inside a bubble that is a reply.
+function ReplyQuote({ senderName, type, content, isMine, colors, isDark, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        rStyles.quote,
+        {
+          borderLeftColor: isMine ? 'rgba(255,255,255,0.8)' : PALETTE.rose,
+          backgroundColor: isMine
+            ? 'rgba(255,255,255,0.16)'
+            : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[rStyles.quoteName, { color: isMine ? '#fff' : PALETTE.rose }]}
+      >
+        {senderName}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[rStyles.quoteText, { color: isMine ? 'rgba(255,255,255,0.85)' : colors.textSecondary }]}
+      >
+        {replySnippet(type, content)}
+      </Text>
+    </Pressable>
+  );
+}
+
+const rStyles = StyleSheet.create({
+  quote: {
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 5,
+    maxWidth: SCREEN_WIDTH * 0.66,
+  },
+  quoteName: { fontSize: 12, fontWeight: '700', marginBottom: 1 },
+  quoteText: { fontSize: 12.5 },
+});
 
 function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
   const player = useAudioPlayer(uri ? { uri } : null);
@@ -67,6 +119,12 @@ function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
   const position = status?.currentTime ?? 0;
   const progress = duration > 0 ? position / duration : 0;
 
+  //generate wave
+  let newWaveForm = [];
+  for (let index = 0; index < 20; index++) {
+    newWaveForm.push(1 + Math.floor(Math.random() * 19));
+  }
+
   const fmtDur = (secs) => {
     const s = Math.floor(secs ?? 0);
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -75,10 +133,15 @@ function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
   const toggle = async () => {
     if (isPlaying) {
       player.pause();
-    } else {
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-      player.play();
+      return;
     }
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    // Restart from the beginning when the clip already finished — play() after
+    // the end is a no-op otherwise.
+    if (status?.didJustFinish || (duration > 0 && position >= duration)) {
+      await player.seekTo(0);
+    }
+    player.play();
   };
   const activeColor = isMine ? '#fff' : PALETTE.rose;
   const inactiveColor = isMine ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
@@ -98,14 +161,14 @@ function VoiceMessageBubble({ uri, isMine, colors, isDark, time, isSeen }) {
 
       <View style={vStyles.mid}>
         <View style={vStyles.waveform}>
-          {WAVEFORM.map((h, i) => (
+          {newWaveForm.map((h, i) => (
             <View
               key={i}
               style={[
                 vStyles.bar,
                 {
                   height: h,
-                  backgroundColor: i / WAVEFORM.length <= progress ? activeColor : inactiveColor,
+                  backgroundColor: i / newWaveForm.length <= progress ? activeColor : inactiveColor,
                 },
               ]}
             />
@@ -172,6 +235,8 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [conversation, setConversation] = useState(null);
+  // Message the user is currently replying to (null = not replying)
+  const [replyingTo, setReplyingTo] = useState(null);
   const [iceBreaker, setIceBreaker] = useState(null);
   const [iceBreakerLoading, setIceBreakerLoading] = useState(false);
   const [iceBreakerDismissed, setIceBreakerDismissed] = useState(false);
@@ -296,15 +361,29 @@ export default function ChatScreen() {
     return () => { if (pollInterval.current) clearInterval(pollInterval.current); };
   }, [fetchMessages, fetchConversation]);
 
+  // Begin replying to a long-pressed message.
+  const startReply = (item) => {
+    if (!item) return;
+    setReplyingTo({
+      id: item.id,
+      content: item.content,
+      message_type: item.message_type,
+      isMine: item.sender_id === currentUser?.id,
+    });
+  };
+
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text || !conversationId || sending) return;
 
+    const replyId = replyingTo?.id || null;
+    const prevReply = replyingTo;
     setSending(true);
     setInputText('');
+    setReplyingTo(null);
 
     try {
-      await messagesApi.sendMessage({ conversation_id: conversationId, content: text });
+      await messagesApi.sendMessage({ conversation_id: conversationId, content: text, reply_to_message: replyId });
       await messagesApi.updateStreak({
         conversationId: conversationId
       });
@@ -312,6 +391,7 @@ export default function ChatScreen() {
     } catch (err) {
       console.error('Send message error:', err);
       setInputText(text);
+      if (prevReply) setReplyingTo(prevReply);
 
       const limitReached = err.response?.data?.limit_reached;
       if (limitReached) {
@@ -373,6 +453,8 @@ export default function ChatScreen() {
 
   const sendImage = async (asset) => {
     if (!conversationId || uploadingMedia) return;
+    const replyId = replyingTo?.id || null;
+    setReplyingTo(null);
     setUploadingMedia(true);
     try {
       const ext = asset.uri.split('.').pop() || 'jpg';
@@ -388,6 +470,7 @@ export default function ChatScreen() {
         content: '',
         message_type: 'image',
         media_url: url,
+        reply_to_message: replyId,
       });
       await messagesApi.updateStreak({
         conversationId: conversationId
@@ -420,7 +503,6 @@ export default function ChatScreen() {
       return;
     }
     try {
-      //await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
@@ -431,7 +513,7 @@ export default function ChatScreen() {
       recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
     } catch (err) {
       console.error('Start recording error:', err);
-      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
     }
   };
 
@@ -483,6 +565,8 @@ export default function ChatScreen() {
 
   const sendVoiceMessage = async (uri) => {
     if (!conversationId || uploadingMedia) return;
+    const replyId = replyingTo?.id || null;
+    setReplyingTo(null);
     setUploadingMedia(true);
     try {
       const { url } = await uploadApi.uploadAudio({
@@ -495,7 +579,16 @@ export default function ChatScreen() {
         content: '',
         message_type: 'voice',
         media_url: url,
+        reply_to_message: replyId,
       });
+      console.log({
+        conversation_id: conversationId,
+        content: '',
+        message_type: 'voice',
+        media_url: url,
+        reply_to_message: replyId,
+      })
+
 
       await messagesApi.updateStreak({
         conversationId: conversationId
@@ -621,6 +714,21 @@ export default function ChatScreen() {
     const isImage = item.message_type === 'image' && item.media_url;
     const isVoice = item.message_type === 'voice' && item.media_url;
 
+    const hasReply = !!item.reply_to_message;
+    const replyName = hasReply
+      ? (item.reply_sender_id === currentUser?.id ? 'Toi' : (item.reply_sender_name || otherUserName))
+      : '';
+    const quoteEl = hasReply ? (
+      <ReplyQuote
+        senderName={replyName}
+        type={item.reply_type}
+        content={item.reply_content}
+        isMine={isMine}
+        colors={colors}
+        isDark={isDark}
+      />
+    ) : null;
+
     const bubbleRadius = isMine
       ? {
           borderTopRightRadius: isFirst ? 20 : 6,
@@ -674,44 +782,59 @@ export default function ChatScreen() {
           )}
 
           {isVoice ? (
-            <VoiceMessageBubble
-              uri={getStorageUrl(item.media_url)}
-              isMine={isMine}
-              colors={colors}
-              isDark={isDark}
-              time={formatTime(item.created_at)}
-              isSeen={item.is_seen}
-            />
+            <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+              {quoteEl}
+              <Pressable onLongPress={() => startReply(item)} delayLongPress={250}>
+                <VoiceMessageBubble
+                  uri={getStorageUrl(item.media_url)}
+                  isMine={isMine}
+                  colors={colors}
+                  isDark={isDark}
+                  time={formatTime(item.created_at)}
+                  isSeen={item.is_seen}
+                />
+              </Pressable>
+            </View>
           ) : isImage ? (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => setViewerUri(getStorageUrl(item.media_url))}
-              style={[styles.imgBubble, bubbleRadius]}
-            >
-              <Image
-                source={{ uri: getStorageUrl(item.media_url) }}
-                style={styles.chatImage}
-                resizeMode="cover"
-              />
-              <View style={[styles.imgMeta, isMine && styles.imgMetaRight]}>
-                <Text style={styles.imgTime}>{formatTime(item.created_at)}</Text>
-                {isMine && (
-                  <Ionicons
-                    name={item.is_seen ? 'checkmark-done' : 'checkmark'}
-                    size={12}
-                    color="rgba(255,255,255,0.8)"
-                  />
-                )}
-              </View>
-            </TouchableOpacity>
+            <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}>
+              {quoteEl}
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setViewerUri(getStorageUrl(item.media_url))}
+                onLongPress={() => startReply(item)}
+                delayLongPress={250}
+                style={[styles.imgBubble, bubbleRadius]}
+              >
+                <Image
+                  source={{ uri: getStorageUrl(item.media_url) }}
+                  style={styles.chatImage}
+                  resizeMode="cover"
+                />
+                <View style={[styles.imgMeta, isMine && styles.imgMetaRight]}>
+                  <Text style={styles.imgTime}>{formatTime(item.created_at)}</Text>
+                  {isMine && (
+                    <Ionicons
+                      name={item.is_seen ? 'checkmark-done' : 'checkmark'}
+                      size={12}
+                      color="rgba(255,255,255,0.8)"
+                    />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
           ) : (
-            <View style={[
-              styles.bubble,
-              bubbleRadius,
-              isMine
-                ? { backgroundColor: PALETTE.rose }
-                : { backgroundColor: isDark ? '#3D332E' : '#F5EDEA' },
-            ]}>
+            <Pressable
+              onLongPress={() => startReply(item)}
+              delayLongPress={250}
+              style={[
+                styles.bubble,
+                bubbleRadius,
+                isMine
+                  ? { backgroundColor: PALETTE.rose }
+                  : { backgroundColor: isDark ? '#3D332E' : '#F5EDEA' },
+              ]}
+            >
+              {quoteEl}
               <Text style={[
                 styles.msgText,
                 { color: isMine ? '#fff' : colors.text },
@@ -730,7 +853,7 @@ export default function ChatScreen() {
                   />
                 )}
               </View>
-            </View>
+            </Pressable>
           )}
         </View>
 
@@ -823,6 +946,30 @@ export default function ChatScreen() {
 
         {/* Ice Breaker card */}
         {messages.length === 0 && renderIceBreakerCard()}
+
+        {/* Reply preview — shows the message being replied to */}
+        {replyingTo && !isRecording && (
+          <View style={[
+            styles.replyPreview,
+            {
+              backgroundColor: isDark ? '#2A2320' : '#F5EDEA',
+              borderTopColor: isDark ? '#3D332E' : PALETTE.border,
+            },
+          ]}>
+            <View style={styles.replyPreviewBar} />
+            <View style={styles.replyPreviewBody}>
+              <Text style={[styles.replyPreviewName, { color: PALETTE.rose }]} numberOfLines={1}>
+                {replyingTo.isMine ? 'Toi' : (otherUserName || 'Réponse')}
+              </Text>
+              <Text style={[styles.replyPreviewText, { color: colors.textSecondary }]} numberOfLines={1}>
+                {replySnippet(replyingTo.message_type, replyingTo.content)}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} hitSlop={10} style={styles.replyPreviewClose}>
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Input bar */}
         <View style={[

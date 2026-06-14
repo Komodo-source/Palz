@@ -58,7 +58,7 @@ function parseInterests(user) {
 
 function VoiceNotePlayer({ uri, colors }) {
   const player = useAudioPlayer(uri ? { uri } : null);
-  const status = useAudioPlayerStatus(player);
+  const status = useAudioPlayerStatus(player) || {};
 
   const toggle = async () => {
     if (status.playing) {
@@ -232,7 +232,6 @@ export default function UserDetailScreen() {
 
   const interests = parseInterests(user);
   const photos = getProfileImages(user);
-  console.log("user_photo", photos)
   const age = calculateAge(user.date_of_birth);
   const city = cityOnly(user.location);
   const photoCount = photos.length;
@@ -264,14 +263,26 @@ const lifestyleBadges = [
 
   const headerOpacity = scrollY.interpolate({ inputRange: [GALLERY_HEIGHT - 80, GALLERY_HEIGHT], outputRange: [0, 1], extrapolate: 'clamp' });
 
-  // ── DEBUG ──
-  ['bio', 'work', 'location', 'home_location', 'labels', 'interests', 'situation', 'astrology_title', 'full_name', 'user_name'].forEach((f) => {
-    const v = user?.[f];
-    if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
-      console.warn(`[OBJECT RENDER BUG] user/[id] user.${f}`, JSON.stringify(v));
-    }
-  });
-  // ── END DEBUG ──
+  // ── Diagnostic: pinpoint any object-valued field that would crash render
+  // ("Objects are not valid as a React child"). Catches plain objects AND
+  // empty-key objects like Date instances (Object.keys(date) === []). ──
+  if (__DEV__) {
+    const scanForObjects = (label, obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          console.warn(
+            `[OBJECT FIELD] ${label}.${k} is a non-array object → crash risk`,
+            { keys: Object.keys(v), isDate: v instanceof Date, ctor: v?.constructor?.name }
+          );
+        }
+      }
+    };
+    scanForObjects('user', user);
+    scanForObjects('interests', interests);
+    wallPosts.forEach((p, i) => scanForObjects(`wallPosts[${i}]`, p));
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -309,7 +320,7 @@ const lifestyleBadges = [
               scrollEventThrottle={16}
             >
               {photos.map((item, index) => {
-                const uri = `${SUPABASE_PHOTOS_URL}${item}`;
+                const uri = getStorageUrl(item);
                 return (
                   <TouchableOpacity key={index} activeOpacity={0.95} onPress={() => setViewerUri(uri)}>
                     <Image source={{ uri }} style={styles.galleryImage} resizeMode="cover" />

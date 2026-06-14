@@ -329,6 +329,58 @@ export function EventsSkeleton({ colors, isDark }) {
   );
 }
 
+// ── Profile (Mon Profil) tab ──────────────────────────────────────
+export function ProfileSkeleton({ colors, isDark }) {
+  const S = (props) => <SkeletonBox isDark={isDark} {...props} />;
+  const cardW = W - Spacing.four * 2;
+
+  return (
+    <SkeletonContainer style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Header */}
+      <View style={{ paddingHorizontal: Spacing.four, paddingTop: 72, paddingBottom: 8 }}>
+        <S width={150} height={34} borderRadius={8} />
+      </View>
+
+      {/* Avatar + name */}
+      <View style={{ alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <S width={110} height={110} borderRadius={55} />
+        <S width={160} height={22} borderRadius={8} />
+        <S width={110} height={14} borderRadius={6} />
+      </View>
+
+      {/* Stats row */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 20 }}>
+        {[0, 1].map((i) => (
+          <View
+            key={i}
+            style={{
+              width: (cardW - 14) / 2,
+              borderRadius: 20,
+              backgroundColor: colors.backgroundElement,
+              padding: 18,
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <S width={48} height={26} borderRadius={8} />
+            <S width={80} height={12} borderRadius={6} />
+          </View>
+        ))}
+      </View>
+
+      {/* Menu rows */}
+      <View style={{ marginTop: 24, marginHorizontal: Spacing.four, gap: 12 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <S width={40} height={40} borderRadius={12} />
+            <S width={cardW * 0.55} height={16} borderRadius={6} />
+          </View>
+        ))}
+      </View>
+    </SkeletonContainer>
+  );
+}
+
 // ── User profile ──────────────────────────────────────────────────
 const GALLERY_H = Math.round(Dimensions.get('window').height * 0.74);
 

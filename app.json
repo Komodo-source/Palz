@@ -57,7 +57,12 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Copines a besoin d'accéder à ton microphone pour enregistrer tes messages vocaux."
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-asset",
       "expo-font"

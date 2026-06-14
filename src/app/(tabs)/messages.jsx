@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   Alert,
+  TextInput,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +47,7 @@ export default function MessagesScreen() {
   const [joinedEvents, setJoinedEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
 
   const fetchAll = useCallback(async ({ background = false } = {}) => {
     try {
@@ -86,7 +88,7 @@ export default function MessagesScreen() {
           fetchAll();
         }
       });
-      return () => { cancelled = true; };
+      return () => { cancelled = true; setLoading(true); };
     }, [fetchAll])
   );
 
@@ -170,6 +172,7 @@ export default function MessagesScreen() {
         console.warn(`[OBJECT RENDER BUG] conversation.${f}`, JSON.stringify(v));
       }
     });
+    console.log("item", item);
     // ── END DEBUG ──
     const img = getAvatar(item.other_user_image);
     const isMe = item.last_message_sender_id && item.last_message_sender_id !== item.other_user_id;
@@ -199,7 +202,7 @@ export default function MessagesScreen() {
           {item.has_unread && <View style={styles.unreadDot} />}
           {streak >= 2 && (
             <View style={styles.streakAvatarBadge}>
-              <Text style={styles.streakAvatarText}>🔥</Text>
+              <Ionicons name="flame" size={11} color="#F59E0B" />
             </View>
           )}
         </TouchableOpacity>
@@ -212,7 +215,8 @@ export default function MessagesScreen() {
             <View style={styles.convTopRight}>
               {streak >= 1 && (
                 <View style={styles.streakPill}>
-                  <Text style={styles.streakPillText}>🔥 {streak}</Text>
+                  <Ionicons name="flame" size={11} color="#D97706" />
+                  <Text style={styles.streakPillText}>{streak}</Text>
                 </View>
               )}
               <Text style={[styles.convTime, { color: colors.textSecondary }]}>
@@ -233,8 +237,8 @@ export default function MessagesScreen() {
               numberOfLines={1}
             >
               {isMe
-                ? `Toi: ${typeof item.last_message === 'string' ? item.last_message : ''}`
-                : ((typeof item.last_message === 'string' && item.last_message) || 'Aucun message')}
+                ? `Toi: ${(typeof item.last_message === 'string' && item.last_message) || 'Média envoyé'}`
+                : ((typeof item.last_message === 'string' && item.last_message) || 'Média reçu')}
             </Text>
           </View>
         </View>
@@ -248,6 +252,14 @@ export default function MessagesScreen() {
   }
 
   const hasContent = conversations.length > 0 || joinedEvents.length > 0;
+
+  const filteredConversations = search.trim()
+    ? conversations.filter((c) =>
+        (typeof c.other_user_name === 'string' ? c.other_user_name : '')
+          .toLowerCase()
+          .includes(search.trim().toLowerCase())
+      )
+    : conversations;
 
   const ListHeader = () => (
     <>
@@ -284,6 +296,20 @@ export default function MessagesScreen() {
         )}
       </View>
 
+      {conversations.length > 0 && (
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={16} color={colors.textSecondary} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text, backgroundColor: colors.backgroundElement }]}
+            placeholder="Rechercher une conversation..."
+            placeholderTextColor={colors.textSecondary}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+          />
+        </View>
+      )}
+
       {!hasContent ? (
         <View style={styles.emptyWrap}>
           <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
@@ -306,7 +332,7 @@ export default function MessagesScreen() {
         </View>
       ) : (
         <FlatList
-          data={conversations}
+          data={filteredConversations}
           keyExtractor={(item) => String(item?.id ?? Math.random())}
           renderItem={renderItem}
           refreshing={refreshing}
@@ -357,6 +383,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: PALETTE.rose,
+  },
+
+  // ── Search ──
+  searchBar: {
+    marginHorizontal: Spacing.four,
+    marginBottom: 8,
+    justifyContent: 'center',
+  },
+  searchIcon: { position: 'absolute', left: 14, zIndex: 1 },
+  searchInput: {
+    borderRadius: 14,
+    paddingVertical: 11,
+    paddingLeft: 40,
+    paddingRight: 16,
+    fontSize: 13,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
   },
 
   // ── Events row ──
@@ -459,6 +502,9 @@ const styles = StyleSheet.create({
   },
   streakAvatarText: { fontSize: 11, lineHeight: 14 },
   streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
     backgroundColor: '#FFF3CD',
     borderRadius: 8,
     paddingHorizontal: 6,

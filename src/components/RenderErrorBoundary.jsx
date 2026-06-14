@@ -11,10 +11,19 @@ import { router } from 'expo-router';
  * precise component that rendered the invalid value.
  */
 export default class RenderErrorBoundary extends React.Component {
-  state = { error: null, stackTop: '' };
+  state = { error: null, stackTop: '', prevName: this.props.name };
 
   static getDerivedStateFromError(error) {
     return { error };
+  }
+
+  // Auto-recover: when the route (name) changes, clear any held error so the
+  // next screen renders instead of staying stuck on the fallback.
+  static getDerivedStateFromProps(props, state) {
+    if (props.name !== state.prevName) {
+      return { prevName: props.name, error: null, stackTop: '' };
+    }
+    return null;
   }
 
   componentDidCatch(error, errorInfo) {

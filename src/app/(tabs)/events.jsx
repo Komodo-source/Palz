@@ -4,16 +4,18 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  SectionList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { eventsApi, messagesApi, swipesApi } from '@/services/api';
+import { eventsApi, messagesApi, swipesApi, getStorageUrl } from '@/services/api';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -141,6 +143,20 @@ function getWeatherInfo(code, precipProb) {
   return { emoji: '🌤️', label: 'Variable', ok: true };
 }
 
+// Map our weather buckets to an Ionicon (no emoji, for the card badges)
+function weatherIconName(label) {
+  switch (label) {
+    case 'Beau': return 'sunny-outline';
+    case 'Nuageux': return 'partly-sunny-outline';
+    case 'Brouillard': return 'cloud-outline';
+    case 'Pluie':
+    case 'Averses': return 'rainy-outline';
+    case 'Neige': return 'snow-outline';
+    case 'Orage': return 'thunderstorm-outline';
+    default: return 'partly-sunny-outline';
+  }
+}
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -217,6 +233,28 @@ export default function EventsScreen() {
     });
   }, [eventsRaw, nearMe, userLocation]);
 
+  // Group upcoming events into day buckets for sectioned rendering (matches mockup)
+  const daySections = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const tomorrowStr = new Date(now.getTime() + 86400000).toDateString();
+    const buckets = { tonight: [], tomorrow: [], weekend: [], later: [] };
+    events.forEach((e) => {
+      const d = new Date(e.starts_at);
+      const ds = d.toDateString();
+      if (ds === todayStr) buckets.tonight.push(e);
+      else if (ds === tomorrowStr) buckets.tomorrow.push(e);
+      else if (d.getDay() === 6 || d.getDay() === 0) buckets.weekend.push(e);
+      else buckets.later.push(e);
+    });
+    const out = [];
+    if (buckets.tonight.length) out.push({ key: 'tonight', title: 'Ce soir', icon: 'moon-outline', data: buckets.tonight });
+    if (buckets.tomorrow.length) out.push({ key: 'tomorrow', title: 'Demain', icon: 'partly-sunny-outline', data: buckets.tomorrow });
+    if (buckets.weekend.length) out.push({ key: 'weekend', title: 'Ce week-end', icon: 'sparkles-outline', data: buckets.weekend });
+    if (buckets.later.length) out.push({ key: 'later', title: 'Plus tard', icon: 'calendar-outline', data: buckets.later });
+    return out;
+  }, [events]);
+
   // Events starting tonight (today, 17h–23h59, not yet started)
   const ceSoirEvents = useMemo(() => {
     const now = new Date();
@@ -257,6 +295,8 @@ export default function EventsScreen() {
     useCallback(() => {
       fetchEvents(activeFilter, activeCategory);
       fetchSuggestions();
+      // Reset to skeleton when leaving so the page never shows stale content while swiping back.
+      return () => setLoading(true);
     }, [fetchEvents, fetchSuggestions, activeFilter, activeCategory, userLocation])
   );
 
@@ -575,14 +615,6 @@ const CeSoirSection = () => {
   };
 
   const renderCard = ({ item }) => {
-    // ── DEBUG ──
-    ['location_name', 'title', 'description', 'category'].forEach((f) => {
-      const v = item[f];
-      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
-        console.warn(`[OBJECT RENDER BUG] event.${f}`, JSON.stringify(v));
-      }
-    });
-    // ── END DEBUG ──
     const meta = CATEGORY_META[item.category] || CATEGORY_META.autre;
     const isFull = item.member_count >= item.max_members;
     const isJoining = joiningId === item.id;
@@ -591,107 +623,120 @@ const CeSoirSection = () => {
       nearMe && userLocation && item.latitude && item.longitude
         ? haversineKm(userLocation.latitude, userLocation.longitude, parseFloat(item.latitude), parseFloat(item.longitude))
         : null;
-    const fillPct = Math.min(100, (item.member_count / item.max_members) * 100);
+
+    // Events have no photo of their own — use the creator's avatar in the attendee stack.
+    const creatorPics = parseDbJson(item.creator_image);
+    const creatorPic = Array.isArray(creatorPics) && creatorPics.length > 0
+      ? creatorPics[0]
+      : (typeof item.creator_image === 'string' ? item.creator_image : null);
+    const creatorUri = creatorPic ? getStorageUrl(creatorPic) : null;
+    const extraMembers = Math.max(0, item.member_count - 1);
 
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.backgroundElement }]}
         onPress={() => router.push(`/(tabs)/event/${item.id}`)}
-        activeOpacity={0.85}
+        activeOpacity={0.9}
       >
-        {/* Left color accent */}
-        <View style={[styles.cardAccent, { backgroundColor: meta.color }]} />
+        {/* ── Banner (category-coloured, no photo available) ── */}
+        <View style={[styles.cardBanner, { backgroundColor: meta.color }]}>
+          <Ionicons name={meta.icon} size={132} color="rgba(255,255,255,0.16)" style={styles.cardBannerIcon} />
 
-        <View style={styles.cardInner}>
-          {/* Header: icon + chips */}
-          <View style={styles.cardTopRow}>
-            <View style={[styles.cardIconBox, { backgroundColor: meta.color + '20' }]}>
-              <Ionicons name={meta.icon} size={20} color={meta.color} />
-            </View>
-            <View style={styles.cardChipsRow}>
-              <View style={[styles.catChipCard, { backgroundColor: meta.color + '18' }]}>
-                <Text style={[styles.catChipCardTxt, { color: meta.color }]}>{typeof meta.label === 'string' ? meta.label : ''}</Text>
-              </View>
-              {item.is_joined && (
-                <View style={styles.joinedChipCard}>
-                  <Ionicons name="checkmark-circle" size={10} color="#10B981" />
-                  <Text style={styles.joinedChipTxt}>Rejoint</Text>
-                </View>
-              )}
-              {isOutdoor && weather && !weather.ok && (
-                <View style={styles.weatherChipCard}>
-                  <Text style={styles.weatherEmoji}>{typeof weather.emoji === 'string' ? weather.emoji : ''}</Text>
-                  <Text style={styles.weatherChipTxt}>{typeof weather.label === 'string' ? weather.label : ''}</Text>
-                </View>
-              )}
-              {isOutdoor && weather && weather.ok && (
-                <View style={[styles.weatherChipCard, { backgroundColor: '#F0FDF4' }]}>
-                  <Text style={styles.weatherEmoji}>{typeof weather.emoji === 'string' ? weather.emoji : ''}</Text>
-                  <Text style={[styles.weatherChipTxt, { color: '#16A34A' }]}>{typeof weather.label === 'string' ? weather.label : ''}</Text>
-                </View>
-              )}
-            </View>
-            {distKm !== null && (
-              <View style={styles.distBadge}>
-                <Ionicons name="navigate-outline" size={10} color={colors.textSecondary} />
-                <Text style={[styles.distText, { color: colors.textSecondary }]}>
-                  {distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)}km`}
-                </Text>
-              </View>
-            )}
+          {/* Bottom darkening overlay */}
+          <View style={styles.cardBannerGrad} pointerEvents="none">
+            <View style={styles.gradA} />
+            <View style={styles.gradB} />
+            <View style={styles.gradC} />
           </View>
 
-          {/* Title */}
-          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
+          {/* Time badge — top left */}
+          <View style={styles.cardTimeBadge}>
+            <Ionicons name="time-outline" size={11} color={meta.color} />
+            <Text style={styles.cardTimeBadgeTxt} numberOfLines={1}>{formatEventTime(item.starts_at)}</Text>
+          </View>
+
+          {/* Top right — Complet / weather / distance */}
+          {isFull ? (
+            <View style={styles.cardFullBadge}>
+              <Text style={styles.cardFullBadgeTxt}>Complet</Text>
+            </View>
+          ) : isOutdoor && weather ? (
+            <View style={styles.cardCornerBadge}>
+              <Ionicons name={weatherIconName(weather.label)} size={11} color={weather.ok ? '#16A34A' : '#B45309'} />
+              <Text style={[styles.cardCornerBadgeTxt, { color: weather.ok ? '#16A34A' : '#B45309' }]} numberOfLines={1}>
+                {typeof weather.label === 'string' ? weather.label : ''}
+              </Text>
+            </View>
+          ) : distKm !== null ? (
+            <View style={styles.cardCornerBadge}>
+              <Ionicons name="navigate-outline" size={10} color="#2D2D2D" />
+              <Text style={styles.cardCornerBadgeTxt} numberOfLines={1}>
+                {distKm < 1 ? `${Math.round(distKm * 1000)}m` : `${distKm.toFixed(1)}km`}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Category tag — bottom left */}
+          <View style={styles.cardCatTag}>
+            <Ionicons name={meta.icon} size={11} color="#fff" />
+            <Text style={styles.cardCatTagTxt}>{typeof meta.label === 'string' ? meta.label : ''}</Text>
+          </View>
+        </View>
+
+        {/* ── Body ── */}
+        <View style={styles.cardBody}>
+          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
             {typeof item.title === 'string' ? item.title : ''}
           </Text>
 
-          {/* Location */}
-          <View style={styles.cardMeta}>
-            <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-            <Text style={[styles.cardMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
+          {typeof item.description === 'string' && item.description ? (
+            <Text style={[styles.cardDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+              {item.description}
+            </Text>
+          ) : null}
+
+          <View style={styles.cardLocRow}>
+            <Ionicons name="location-outline" size={12} color={meta.color} />
+            <Text style={[styles.cardLocTxt, { color: colors.textSecondary }]} numberOfLines={1}>
               {typeof item.location_name === 'string' ? item.location_name : ''}
             </Text>
           </View>
 
-          {/* Time */}
-          <View style={styles.cardMeta}>
-            <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-            <Text style={[styles.cardMetaText, { color: colors.textSecondary }]}>
-              {formatEventTime(item.starts_at)}
-            </Text>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.cardFooter}>
-            <View style={styles.membersWrap}>
-              <View style={[styles.membersBarBg, { backgroundColor: colors.backgroundSelected }]}>
-                <View style={[styles.membersBarFill, {
-                  backgroundColor: isFull ? '#EF4444' : meta.color,
-                  width: `${fillPct}%`,
-                }]} />
-              </View>
-              <Text style={[styles.membersText, { color: isFull ? '#EF4444' : colors.textSecondary }]}>
-                {item.member_count}/{item.max_members} places
+          <View style={styles.cardFooterRow}>
+            <View style={styles.cardAttendees}>
+              {creatorUri ? (
+                <Image source={{ uri: creatorUri }} style={styles.cardAvatar} />
+              ) : (
+                <View style={[styles.cardAvatar, styles.cardAvatarPh, { backgroundColor: meta.color + '22' }]}>
+                  <Ionicons name="person" size={12} color={meta.color} />
+                </View>
+              )}
+              {extraMembers > 0 && (
+                <View style={styles.cardAvatarMore}>
+                  <Text style={styles.cardAvatarMoreTxt}>+{extraMembers}</Text>
+                </View>
+              )}
+              <Text style={[styles.cardAttendeesTxt, { color: colors.textSecondary }]}>
+                {item.member_count} participante{item.member_count > 1 ? 's' : ''}
               </Text>
             </View>
 
             <TouchableOpacity
-              style={[styles.joinBtn, {
+              style={[styles.cardJoinBtn, {
                 backgroundColor: item.is_joined ? '#10B981' : isFull ? colors.backgroundSelected : meta.color,
                 shadowColor: item.is_joined ? '#10B981' : isFull ? 'transparent' : meta.color,
               }]}
               onPress={() => handleJoin(item)}
               disabled={isFull && !item.is_joined}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {isJoining ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={[styles.joinBtnText, {
+                <Text style={[styles.cardJoinBtnTxt, {
                   color: (item.is_joined || !isFull) ? '#fff' : colors.textSecondary,
                 }]}>
-                  {item.is_joined ? 'Chat →' : isFull ? 'Complet' : 'Rejoindre'}
+                  {item.is_joined ? 'Ouvrir' : isFull ? 'Complet' : 'Rejoindre'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -811,19 +856,32 @@ const CeSoirSection = () => {
         ))}
       </ScrollView>
 
-      <FlatList
-        data={events}
+      <SectionList
+        sections={daySections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item, index }) => (
-          <View>
+          <View style={{ marginTop: 12 }}>
             {renderCard({ item, index })}
           </View>
         )}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleWrap}>
+              <Ionicons name={section.icon} size={16} color={PALETTE.rose} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{section.title}</Text>
+            </View>
+            <View style={styles.sectionBadge}>
+              <Text style={styles.sectionBadgeText}>
+                {section.data.length} sortie{section.data.length > 1 ? 's' : ''}
+              </Text>
+            </View>
+          </View>
+        )}
+        stickySectionHeadersEnabled={false}
         refreshing={refreshing}
         onRefresh={() => { setRefreshing(true); fetchEvents(activeFilter, activeCategory); }}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<><PersonalizedSection /> {/*<CeSoirSection />*/}</>}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyCircle, { backgroundColor: PALETTE.rosePale }]}>
@@ -920,65 +978,116 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.six,
-    gap: 12,
     paddingTop: 4,
   },
 
-  card: {
+  sectionHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 2,
+  },
+  sectionTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  sectionBadge: {
+    backgroundColor: PALETTE.rose,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  sectionBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+
+  card: {
     borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
     elevation: 4,
   },
-  cardAccent: { width: 5 },
-  cardInner: { flex: 1, padding: 14, gap: 5 },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-  cardIconBox: {
-    width: 34, height: 34, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  cardChipsRow: { flex: 1, flexDirection: 'row', gap: 5, flexWrap: 'wrap', alignItems: 'center' },
-  catChipCard: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7 },
-  catChipCardTxt: { fontSize: 11, fontWeight: '700' },
-  joinedChipCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 7,
-  },
-  joinedChipTxt: { fontSize: 10, fontWeight: '700', color: '#10B981' },
-  weatherChipCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#FFFBEB', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 7,
-  },
-  weatherEmoji: { fontSize: 11 },
-  weatherChipTxt: { fontSize: 10, fontWeight: '700', color: '#B45309' },
-  distBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
-  distText: { fontSize: 11, fontWeight: '600' },
-  cardTitle: { fontSize: 16, fontWeight: '800', lineHeight: 21, letterSpacing: -0.2 },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  cardMetaText: { fontSize: 12, flex: 1 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
 
-  membersWrap: { flex: 1, gap: 4 },
-  membersBarBg: { height: 4, borderRadius: 2, overflow: 'hidden' },
-  membersBarFill: { height: 4, borderRadius: 2 },
-  membersText: { fontSize: 11, fontWeight: '600' },
+  // ── Banner ──
+  cardBanner: {
+    height: 116,
+    width: '100%',
+    justifyContent: 'flex-end',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardBannerIcon: { position: 'absolute', right: -14, top: -12 },
+  cardBannerGrad: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 72 },
+  gradA: { flex: 1, backgroundColor: 'rgba(0,0,0,0.04)' },
+  gradB: { flex: 1, backgroundColor: 'rgba(0,0,0,0.16)' },
+  gradC: { flex: 1, backgroundColor: 'rgba(0,0,0,0.34)' },
 
-  joinBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-    minWidth: 92,
+  cardTimeBadge: {
+    position: 'absolute', top: 10, left: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5,
+    maxWidth: '62%',
+  },
+  cardTimeBadgeTxt: { fontSize: 11, fontWeight: '800', color: '#2D2D2D' },
+
+  cardFullBadge: {
+    position: 'absolute', top: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5,
+  },
+  cardFullBadgeTxt: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  cardCornerBadge: {
+    position: 'absolute', top: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5,
+  },
+  cardCornerBadgeTxt: { fontSize: 11, fontWeight: '800', color: '#2D2D2D' },
+
+  cardCatTag: {
+    position: 'absolute', bottom: 10, left: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.4)', borderWidth: 1,
+    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  cardCatTagTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+
+  // ── Body ──
+  cardBody: { padding: 14, gap: 6 },
+  cardTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  cardDesc: { fontSize: 12.5, lineHeight: 18, fontWeight: '500' },
+  cardLocRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  cardLocTxt: { fontSize: 12, fontWeight: '600', flex: 1 },
+
+  cardFooterRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 8, marginTop: 4,
+  },
+  cardAttendees: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  cardAvatar: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff' },
+  cardAvatarPh: { alignItems: 'center', justifyContent: 'center' },
+  cardAvatarMore: {
+    width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff',
+    backgroundColor: '#EDE8F5', alignItems: 'center', justifyContent: 'center', marginLeft: -8,
+  },
+  cardAvatarMoreTxt: { fontSize: 9, fontWeight: '800', color: '#7B61A8' },
+  cardAttendeesTxt: { fontSize: 11, fontWeight: '600', marginLeft: 7 },
+
+  cardJoinBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    minWidth: 96,
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
     elevation: 3,
   },
-  joinBtnText: { fontSize: 13, fontWeight: '700' },
+  cardJoinBtnTxt: { fontSize: 13, fontWeight: '800' },
 
   emptyWrap: {
     alignItems: 'center',

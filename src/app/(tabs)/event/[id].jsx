@@ -97,7 +97,24 @@ function VoiceMessageBubble({ uri, isMe, colors, isDark }) {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  const toggle = () => { if (isPlaying) player.pause(); else player.play(); };
+  const toggle = async () => {
+    if (isPlaying) {
+      player.pause();
+      return;
+    }
+    try {
+      // Ensure playback is audible even when the phone is on silent (iOS).
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      // Restart from the beginning when the clip already finished — play() after
+      // the end is a no-op otherwise.
+      if (status?.didJustFinish || (duration > 0 && position >= duration)) {
+        await player.seekTo(0);
+      }
+      player.play();
+    } catch (err) {
+      console.warn('Voice playback error:', err?.message || err);
+    }
+  };
   const activeColor = isMe ? '#fff' : PALETTE.rose;
   const inactiveColor = isMe ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
 
@@ -327,14 +344,14 @@ export default function EventDetailScreen() {
       return;
     }
     try {
-      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
       setIsRecording(true);
       recordTimerRef.current = setTimeout(() => stopAndSendRecording(), 60000);
     } catch (err) {
       console.error('Start recording error:', err);
-      setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+      setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
     }
   };
 
@@ -343,7 +360,7 @@ export default function EventDetailScreen() {
     setIsRecording(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       const uri = recorder.uri;
       if (uri) await sendVoiceMessage(uri);
     } catch (err) {
@@ -356,7 +373,7 @@ export default function EventDetailScreen() {
     setIsRecording(false);
     try {
       await recorder.stop();
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     } catch (_) {}
   };
 
@@ -742,76 +759,33 @@ export default function EventDetailScreen() {
         }
       />
 
-      {/* Chat input — only for members */}
+      {/* Chat input — only for members (text only) */}
       {event?.is_joined && !isExpired && (
         <View style={[styles.inputBar, { backgroundColor: colors.background, borderTopColor: colors.backgroundSelected }]}>
-          {isRecording ? (
-            <>
-              <TouchableOpacity
-                style={[styles.mediaBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale }]}
-                onPress={cancelRecording}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-              <View style={[styles.chatInput, { backgroundColor: isDark ? '#3D332E' : '#F5EDEA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}>
-                <View style={styles.recDot} />
-                <Text style={{ color: '#FF3B30', fontWeight: '600', fontSize: 15 }}>
-                  {`${Math.floor(Math.floor((recorderState.durationMillis ?? 0) / 1000) / 60)}:${String(Math.floor((recorderState.durationMillis ?? 0) / 1000) % 60).padStart(2, '0')}`}
-                </Text>
-                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>En cours...</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: '#FF3B30' }]}
-                onPress={stopAndSendRecording}
-                disabled={uploadingMedia}
-                activeOpacity={0.7}
-              >
-                {uploadingMedia
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Ionicons name="stop" size={18} color="#fff" />
-                }
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TextInput
-                style={[styles.chatInput, { backgroundColor: colors.backgroundSelected, color: colors.text }]}
-                placeholder="Message..."
-                placeholderTextColor={colors.textSecondary}
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                maxLength={1000}
-                returnKeyType="send"
-                onSubmitEditing={handleSend}
-                blurOnSubmit={false}
-              />
-              {inputText.trim().length > 0 ? (
-                <TouchableOpacity
-                  style={[styles.sendBtn, { opacity: sending ? 0.4 : 1 }]}
-                  onPress={handleSend}
-                  disabled={sending}
-                  activeOpacity={0.8}
-                >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Ionicons name="send" size={18} color="#fff" />
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: isDark ? '#3D332E' : PALETTE.rosePale, shadowOpacity: 0, elevation: 0 }]}
-                  onPress={startRecording}
-                  disabled={uploadingMedia}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="mic-outline" size={20} color={PALETTE.rose} />
-                </TouchableOpacity>
-              )}
-            </>
-          )}
+          <TextInput
+            style={[styles.chatInput, { backgroundColor: colors.backgroundSelected, color: colors.text }]}
+            placeholder="Message..."
+            placeholderTextColor={colors.textSecondary}
+            value={inputText}
+            onChangeText={setInputText}
+            multiline
+            maxLength={1000}
+            returnKeyType="send"
+            onSubmitEditing={handleSend}
+            blurOnSubmit={false}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, { opacity: sending || inputText.trim().length === 0 ? 0.4 : 1 }]}
+            onPress={handleSend}
+            disabled={sending || inputText.trim().length === 0}
+            activeOpacity={0.8}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="send" size={18} color="#fff" />
+            )}
+          </TouchableOpacity>
         </View>
       )}
     </KeyboardAvoidingView>
