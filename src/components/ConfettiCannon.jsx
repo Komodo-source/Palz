@@ -11,10 +11,10 @@ import Animated, {
 const { width: W, height: H } = Dimensions.get('window');
 
 const COLORS = [
-  '#FF8FA3', '#FFB5C2', '#8B5CF6', '#A78BFA',
+  '#C4325E', '#E07A95', '#C4325E', '#A78BFA',
   '#F59E0B', '#FCD34D', '#10B981', '#6EE7B7',
-  '#3B82F6', '#93C5FD', '#EC4899', '#F9A8D4',
-  '#FB923C', '#FDE68A', '#FF8FA3', '#C4B5FD',
+  '#C4325E', '#93C5FD', '#EC4899', '#F9A8D4',
+  '#FB923C', '#FDE68A', '#C4325E', '#C4B5FD',
 ];
 
 function Particle({ cx, cy, tx, ty, color, pw, ph, delay, spin }) {

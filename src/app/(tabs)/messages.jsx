@@ -11,7 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { messagesApi, eventsApi, getStorageUrl } from '@/services/api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -34,8 +34,8 @@ const CATEGORY_ICONS = {
 };
 
 const CATEGORY_COLORS = {
-  bar: '#8B5CF6', bowling: '#3B82F6', cinema: '#F59E0B', restaurant: '#10B981',
-  sport: '#EF4444', cafe: '#92400E', plage: '#F97316', parc: '#22C55E', autre: '#FF8FA3',
+  bar: '#C4325E', bowling: '#C4325E', cinema: '#F59E0B', restaurant: '#10B981',
+  sport: '#EF4444', cafe: '#92400E', plage: '#F97316', parc: '#22C55E', autre: '#C4325E',
 };
 
 export default function MessagesScreen() {
@@ -326,7 +326,7 @@ export default function MessagesScreen() {
             onPress={() => router.push('/(tabs)')}
             activeOpacity={0.8}
           >
-            <Ionicons name="flower-outline" size={18} color={PALETTE.white} />
+            <MaterialCommunityIcons name="fruit-cherries" size={18} color={PALETTE.white} />
             <Text style={styles.discoverBtnText}>Découvrir</Text>
           </TouchableOpacity>
         </View>

@@ -40,15 +40,15 @@ function tonightAt(h = 20, min = 0) {
 }
 
 const CATEGORIES = [
-  { key: 'bar',        label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
-  { key: 'bowling',    label: 'Bowling',    icon: 'trophy-outline',     color: '#3B82F6' },
-  { key: 'cinema',     label: 'Cinéma',     icon: 'film-outline',       color: '#F59E0B' },
-  { key: 'restaurant', label: 'Restaurant', icon: 'restaurant-outline', color: '#10B981' },
-  { key: 'sport',      label: 'Sport',      icon: 'fitness-outline',    color: '#EF4444' },
-  { key: 'cafe',       label: 'Café',       icon: 'cafe-outline',       color: '#92400E' },
-  { key: 'plage',      label: 'Plage',      icon: 'sunny-outline',      color: '#F97316' },
-  { key: 'parc',       label: 'Parc',       icon: 'leaf-outline',       color: '#22C55E' },
-  { key: 'autre',      label: 'Autre',      icon: 'star-outline',       color: '#FF8FA3' },
+  { key: 'bar',        label: 'Bar',        icon: 'wine-outline',       color: '#C4325E' },
+  { key: 'bowling',    label: 'Bowling',    icon: 'trophy-outline',     color: '#C4325E' },
+  { key: 'cinema',     label: 'Cinéma',     icon: 'film-outline',       color: '#C4325E' },
+  { key: 'restaurant', label: 'Restaurant', icon: 'restaurant-outline', color: '#C4325E' },
+  { key: 'sport',      label: 'Sport',      icon: 'fitness-outline',    color: '#C4325E' },
+  { key: 'cafe',       label: 'Café',       icon: 'cafe-outline',       color: '#C4325E' },
+  { key: 'plage',      label: 'Plage',      icon: 'sunny-outline',      color: '#C4325E' },
+  { key: 'parc',       label: 'Parc',       icon: 'leaf-outline',       color: '#C4325E' },
+  { key: 'autre',      label: 'Autre',      icon: 'star-outline',       color: '#C4325E' },
 ];
 
 const MIN_MEMBERS = 2;
@@ -331,7 +331,7 @@ export default function CreateEventScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.locModeBtn, locationMode === 'map' && { backgroundColor: '#3B82F6' }]}
+            style={[styles.locModeBtn, locationMode === 'map' && { backgroundColor: '#C4325E' }]}
             onPress={() => setShowMap(true)}
             activeOpacity={0.7}
           >
@@ -360,7 +360,7 @@ export default function CreateEventScreen() {
             <Ionicons
               name={locationMode === 'map' ? 'map' : 'location'}
               size={18}
-              color={locationMode === 'map' ? '#3B82F6' : '#10B981'}
+              color={locationMode === 'map' ? '#C4325E' : '#10B981'}
             />
             <Text style={[styles.gpsResultText, { color: locationName ? colors.text : colors.textSecondary }]} numberOfLines={2}>
               {locationName || (locationMode === 'map' ? 'Appuie pour ouvrir la carte' : 'Appuie pour détecter ta position')}
@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     gap: 12,
-    shadowColor: '#6D28D9',
+    shadowColor: '#C4325E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 12,

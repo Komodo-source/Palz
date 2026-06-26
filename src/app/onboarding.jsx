@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -36,32 +36,57 @@ const PHOTO_SIZE = (SCREEN_WIDTH - 64) / 3;
 
 // ── Palette douce et féminine ──
 const PALETTE = {
-  rose: '#FF8FA3',
-  roseLight: '#FFB5C2',
+  rose: '#C4325E',
+  roseLight: '#E07A95',
   rosePale: '#FFF0F3',
   lavender: '#E8D5F5',
   lavenderPale: '#F8F4FF',
-  cream: '#FFF9F5',
+  cream: '#FFFFFF',
   white: '#FFFFFF',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
-  textLight: '#B0A098',
-  border: '#F0E0E0',
+  textDark: '#222222',
+  textMid: '#717171',
+  textLight: '#9A9A9A',
+  border: '#EBEBEB',
   cardBg: '#FFFFFF',
   success: '#98D8AA',
   error: '#FF6B6B',
-  shadow: '#FFB5C2',
+  shadow: '#E07A95',
 };
 
 const SITUATION_OPTIONS = [
   { label: 'Célibataire', value: 'celibataire', icon: 'sparkles' },
   { label: 'En couple', value: 'couple', icon: 'heart' },
   { label: 'En recherche', value: 'recherche', icon: 'search' },
-  { label: 'Divorcé(e)', value: 'divorce', icon: 'flower' },
+  { label: 'Divorcé(e)', value: 'divorce', icon: 'cherry' },
   { label: 'C\'est compliqué', value: 'complique', icon: 'pulse' },
 ];
 
 const TOTAL_STEPS = 11; // zodiac(0) + sports(1) + hobbies(2) + photos(3) + location(4) + situation(5) + relation(6) + compat(7-9) + video(10)
+
+// City suggestions for the location step. Each carries coordinates so picking a
+// city sets the same latitude/longitude the matching algorithm uses.
+const CITIES = [
+  { name: 'Paris', region: 'Île-de-France', latitude: 48.8566, longitude: 2.3522 },
+  { name: 'Marseille', region: "Provence-Alpes-Côte d'Azur", latitude: 43.2965, longitude: 5.3698 },
+  { name: 'Lyon', region: 'Auvergne-Rhône-Alpes', latitude: 45.764, longitude: 4.8357 },
+  { name: 'Toulouse', region: 'Occitanie', latitude: 43.6047, longitude: 1.4442 },
+  { name: 'Nice', region: "Provence-Alpes-Côte d'Azur", latitude: 43.7102, longitude: 7.262 },
+  { name: 'Nantes', region: 'Pays de la Loire', latitude: 47.2184, longitude: -1.5536 },
+  { name: 'Montpellier', region: 'Occitanie', latitude: 43.6108, longitude: 3.8767 },
+  { name: 'Strasbourg', region: 'Grand Est', latitude: 48.5734, longitude: 7.7521 },
+  { name: 'Bordeaux', region: 'Nouvelle-Aquitaine', latitude: 44.8378, longitude: -0.5792 },
+  { name: 'Lille', region: 'Hauts-de-France', latitude: 50.6292, longitude: 3.0573 },
+  { name: 'Rennes', region: 'Bretagne', latitude: 48.1173, longitude: -1.6778 },
+  { name: 'Reims', region: 'Grand Est', latitude: 49.2583, longitude: 4.0317 },
+  { name: 'Toulon', region: "Provence-Alpes-Côte d'Azur", latitude: 43.1242, longitude: 5.928 },
+  { name: 'Grenoble', region: 'Auvergne-Rhône-Alpes', latitude: 45.1885, longitude: 5.7245 },
+  { name: 'Dijon', region: 'Bourgogne-Franche-Comté', latitude: 47.322, longitude: 5.0415 },
+  { name: 'Angers', region: 'Pays de la Loire', latitude: 47.4784, longitude: -0.5632 },
+  { name: 'Nîmes', region: 'Occitanie', latitude: 43.8367, longitude: 4.3601 },
+  { name: 'Clermont-Ferrand', region: 'Auvergne-Rhône-Alpes', latitude: 45.7772, longitude: 3.087 },
+  { name: 'Le Havre', region: 'Normandie', latitude: 49.4944, longitude: 0.1079 },
+  { name: 'Tours', region: 'Centre-Val de Loire', latitude: 47.3941, longitude: 0.6848 },
+];
 
 
 
@@ -254,61 +279,117 @@ function PhotosStep({ photos, onAddPhoto, onRemovePhoto, isUploading }) {
         </View>
 
         <Text style={styles.photoHint}>
-          {photos.length === 0 ? 'Des photos naturelles et souriantes sont les meilleures ! 🌸' : 'Tu peux en ajouter ou modifier plus tard'}
+          {photos.length === 0 ? 'Des photos naturelles et souriantes sont les meilleures ! 🍒' : 'Tu peux en ajouter ou modifier plus tard'}
         </Text>
       </ScrollView>
     </View>
   );
 }
 
-function LocationStep({ location, isFetching, onGetLocation, onSkip }) {
+function LocationStep({ location, isFetching, onGetLocation, onSelectCity, onClear, onSkip }) {
+  const [search, setSearch] = useState('');
+
+  const filteredCities = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return CITIES;
+    return CITIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.region.toLowerCase().includes(q)
+    );
+  }, [search]);
+
   return (
     <View style={styles.stepContainer}>
       <View style={styles.stepHeader}>
         <View style={[styles.iconCircle, { backgroundColor: PALETTE.rosePale }]}>
           <Ionicons name="location" size={32} color={PALETTE.rose} />
         </View>
-        <Text style={styles.stepTitle}>Ta localisation</Text>
-        <Text style={styles.stepSubtitle}>Partage ta position pour trouver des amis près de chez toi</Text>
+        <Text style={styles.stepTitle}>Où es-tu basée ?</Text>
+        <Text style={styles.stepSubtitle}>Pour te connecter avec des copines près de chez toi</Text>
       </View>
 
-      <View style={styles.locationContent}>
-        <View style={styles.locationIllustration}>
-          <Ionicons name="earth" size={80} color={PALETTE.roseLight} />
-        </View>
-
-        {location ? (
+      {location ? (
+        // A position has been chosen (precise GPS or a city) — show confirmation
+        <View style={styles.locationContent}>
           <View style={[styles.locationSuccess, { backgroundColor: PALETTE.rosePale }]}>
             <Ionicons name="checkmark-circle" size={24} color={PALETTE.success} />
-            <Text style={styles.locationSuccessText}>Position enregistrée !</Text>
+            <Text style={styles.locationSuccessText}>
+              {location.label ? location.label : 'Position enregistrée !'}
+            </Text>
             <Text style={styles.locationCoords}>
               {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
             </Text>
           </View>
-        ) : (
+          <TouchableOpacity onPress={onClear} activeOpacity={0.7} style={{ marginTop: 16 }}>
+            <Text style={styles.locationChangeLink}>Changer de position</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.locationPicker}>
+          {/* Search a city */}
+          <View style={styles.citySearchWrap}>
+            <Ionicons name="search" size={18} color={PALETTE.textMid} />
+            <TextInput
+              style={styles.citySearchInput}
+              placeholder="Rechercher une ville..."
+              placeholderTextColor={PALETTE.textLight}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color={PALETTE.textLight} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Use precise GPS location */}
           <TouchableOpacity
-            style={styles.locationButton}
+            style={styles.useLocationRow}
             onPress={onGetLocation}
             disabled={isFetching}
             activeOpacity={0.7}
           >
             {isFetching ? (
-              <ActivityIndicator color={PALETTE.white} size="small" />
+              <ActivityIndicator color={PALETTE.rose} size="small" />
             ) : (
-              <>
-                <Ionicons name="navigate" size={22} color={PALETTE.white} />
-                <Text style={styles.locationButtonText}>Activer ma position</Text>
-              </>
+              <Ionicons name="navigate" size={20} color={PALETTE.rose} />
             )}
+            <Text style={styles.useLocationText}>Utiliser ma position actuelle</Text>
           </TouchableOpacity>
-        )}
 
-        {!location && (
-          <TouchableOpacity onPress={onSkip} activeOpacity={0.7}>
-            <Text style={styles.skipLink}>Passer cette étape</Text>
+          {/* City suggestions */}
+          <Text style={styles.citySectionLabel}>Suggestions</Text>
+          <ScrollView
+            style={styles.cityList}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {filteredCities.map((city) => (
+              <TouchableOpacity
+                key={city.name}
+                style={styles.cityRow}
+                onPress={() => onSelectCity(city)}
+                activeOpacity={0.6}
+              >
+                <Ionicons name="location-outline" size={20} color={PALETTE.rose} style={{ marginRight: 14 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cityName}>{city.name}</Text>
+                  <Text style={styles.cityRegion}>{city.region}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={PALETTE.border} />
+              </TouchableOpacity>
+            ))}
+            {filteredCities.length === 0 && (
+              <Text style={styles.cityEmpty}>Aucune ville trouvée. Utilise ta position actuelle.</Text>
+            )}
+          </ScrollView>
+
+          <TouchableOpacity onPress={onSkip} activeOpacity={0.7} style={{ alignSelf: 'center', marginTop: 8 }}>
+            <Text style={styles.locationChangeLink}>Passer cette étape</Text>
           </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -341,7 +422,9 @@ function SituationStep({ selected, onSelect }) {
                 styles.situationIconWrap,
                 isSelected && styles.situationIconWrapSelected,
               ]}>
-                <Ionicons name={option.icon} size={22} color={isSelected ? PALETTE.white : PALETTE.rose} />
+                {option.icon === 'cherry'
+                  ? <MaterialCommunityIcons name="fruit-cherries" size={22} color={isSelected ? PALETTE.white : PALETTE.rose} />
+                  : <Ionicons name={option.icon} size={22} color={isSelected ? PALETTE.white : PALETTE.rose} />}
               </View>
               <Text style={[
                 styles.situationLabel,
@@ -676,7 +759,7 @@ export default function OnboardingScreen() {
           <Text style={vStyles.contact}>
             Un problème ou une question ?{'\n'}
             <Text style={{ color: PALETTE.rose, fontWeight: '600' }}>support@copines-app.fr</Text>
-            {'  '}— nous répondons rapidement 🌸
+            {'  '}— nous répondons rapidement 🍒
           </Text>
         </ScrollView>
       </View>
@@ -1030,6 +1113,12 @@ export default function OnboardingScreen() {
             location={userLocation}
             isFetching={isFetchingLocation}
             onGetLocation={getCurrentLocation}
+            onSelectCity={(city) => setUserLocation({
+              latitude: city.latitude,
+              longitude: city.longitude,
+              label: city.name,
+            })}
+            onClear={() => setUserLocation(null)}
             onSkip={() => {
               handleNext();
             }}
@@ -1113,6 +1202,7 @@ export default function OnboardingScreen() {
       if (userLocation) {
         updateData.latitude = userLocation.latitude;
         updateData.longitude = userLocation.longitude;
+        if (userLocation.label) updateData.location = userLocation.label;
       }
 
       // Situation
@@ -2094,6 +2184,80 @@ const styles = StyleSheet.create({
     color: PALETTE.textLight,
     width: '100%',
     textAlign: 'center',
+  },
+  locationChangeLink: {
+    color: PALETTE.rose,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  // ── City picker ──
+  locationPicker: {
+    flex: 1,
+    paddingBottom: 16,
+  },
+  citySearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: PALETTE.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: PALETTE.white,
+  },
+  citySearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: PALETTE.textDark,
+    padding: 0,
+  },
+  useLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    marginTop: 6,
+  },
+  useLocationText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE.rose,
+  },
+  citySectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  cityList: {
+    flex: 1,
+  },
+  cityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: PALETTE.border,
+  },
+  cityName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE.textDark,
+  },
+  cityRegion: {
+    fontSize: 13,
+    color: PALETTE.textMid,
+    marginTop: 2,
+  },
+  cityEmpty: {
+    fontSize: 14,
+    color: PALETTE.textMid,
+    textAlign: 'center',
+    paddingVertical: 24,
   },
   skipLink: {
     color: PALETTE.textLight,

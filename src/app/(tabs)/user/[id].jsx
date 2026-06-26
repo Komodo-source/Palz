@@ -10,9 +10,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  Platform,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usersApi, swipesApi, wallApi, messagesApi, getStorageUrl } from '@/services/api';
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from 'expo-audio';
@@ -119,6 +120,7 @@ export default function UserDetailScreen() {
   const { user: currentUser } = useAuth();
   const colorScheme = useColorScheme();
   const colors = getColors(colorScheme);
+  const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -241,10 +243,10 @@ export default function UserDetailScreen() {
 
 
 const lifestyleBadges = [
-  ...(user.is_premium ? [{ icon: 'star', label: 'Premium', bg: '#FFF9E6', color: '#D97706' }] : []),
-  ...(typeof user.astrology_title === 'string' ? [{ icon: ZODIAC_ICONS[user.astrology_title] || 'star-outline', label: user.astrology_title, bg: '#FFF0F3', color: '#CC3D5E' }] : []),
-  ...(typeof user.situation === 'string' ? [{ icon: 'heart-outline', label: user.situation, bg: '#E8D5F5', color: '#6D28D9' }] : []),
-  ...(typeof user.work === 'string' ? [{ icon: 'briefcase-outline', label: user.work, bg: '#E0F2FE', color: '#0369A1' }] : []),
+  ...(user.is_premium ? [{ icon: 'star', label: 'Premium', bg: '#FFF0F3', color: '#C4325E' }] : []),
+  ...(typeof user.astrology_title === 'string' ? [{ icon: ZODIAC_ICONS[user.astrology_title] || 'star-outline', label: user.astrology_title, bg: '#FFF0F3', color: '#C4325E' }] : []),
+  ...(typeof user.situation === 'string' ? [{ icon: 'heart-outline', label: user.situation, bg: '#FFF0F3', color: '#C4325E' }] : []),
+  ...(typeof user.work === 'string' ? [{ icon: 'briefcase-outline', label: user.work, bg: '#FFF0F3', color: '#C4325E' }] : []),
 ];
 
   const reliabilityStars = Math.min(3, Math.max(1, user.reliability_score || 1));
@@ -260,8 +262,6 @@ const lifestyleBadges = [
   const vibeLabels = (Array.isArray(rawLabels.vibe) ? rawLabels.vibe : []).filter((x) => typeof x === 'string');
   const dispoLabels = (Array.isArray(rawLabels.dispo) ? rawLabels.dispo : []).filter((x) => typeof x === 'string');
   const irlLabels = (Array.isArray(rawLabels.irl) ? rawLabels.irl : []).filter((x) => typeof x === 'string');
-
-  const headerOpacity = scrollY.interpolate({ inputRange: [GALLERY_HEIGHT - 80, GALLERY_HEIGHT], outputRange: [0, 1], extrapolate: 'clamp' });
 
   // ── Diagnostic: pinpoint any object-valued field that would crash render
   // ("Objects are not valid as a React child"). Catches plain objects AND
@@ -288,20 +288,31 @@ const lifestyleBadges = [
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Floating back button */}
-      <TouchableOpacity style={styles.backCircle} onPress={() => router.back()} activeOpacity={0.8}>
-        <Ionicons name="chevron-back" size={22} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Sticky name bar (appears after gallery scrolls away) */}
-      <Animated.View style={[styles.stickyBar, { backgroundColor: colors.background, opacity: headerOpacity }]}>
-        <Text style={[styles.stickyName, { color: colors.text }]} numberOfLines={1}>
-          {String(user.full_name || user.user_name || 'Utilisateur')}{age ? `, ${age}` : ''}
-        </Text>
-      </Animated.View>
+      {/* ── Top bar (Copines wordmark) ── */}
+      <View style={[styles.topBar, { paddingTop: insets.top }]}>
+        <View style={styles.topBarRow}>
+          <TouchableOpacity style={styles.topBarBtn} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={24} color={PALETTE.textDark} />
+          </TouchableOpacity>
+          <View style={styles.topBarRight}>
+            <TouchableOpacity
+              style={styles.topBarBtn}
+              onPress={() => Share.share({ message: `Découvre le profil de ${String(user.full_name || user.user_name || '')} sur Copines` })}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="share-outline" size={21} color={PALETTE.textDark} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.topBarBtn} activeOpacity={0.7}>
+              <Ionicons name="ellipsis-horizontal" size={21} color={PALETTE.textDark} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.wordmark} numberOfLines={1}>Copines</Text>
+        </View>
+      </View>
 
       <Animated.ScrollView
         ref={scrollRef}
+        contentContainerStyle={{ paddingTop: insets.top + 52 }}
         showsVerticalScrollIndicator={false}
         bounces={false}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
@@ -330,7 +341,7 @@ const lifestyleBadges = [
             </ScrollView>
           ) : (
             <View style={[styles.galleryPlaceholder, { backgroundColor: PALETTE.rosePale }]}>
-              <Text style={{ fontSize: 72 }}>🌸</Text>
+              <Text style={{ fontSize: 72 }}>🍒</Text>
             </View>
           )}
 
@@ -402,7 +413,7 @@ const lifestyleBadges = [
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.backgroundSelected }]} />
           <View style={styles.statItem}>
-            <Ionicons name="calendar-outline" size={22} color="#6D28D9" />
+            <Ionicons name="calendar-outline" size={22} color="#C4325E" />
             <Text style={[styles.statValue, { color: colors.text }]}>{memberWeeks}</Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Semaines</Text>
           </View>
@@ -413,7 +424,7 @@ const lifestyleBadges = [
           </View>
            {/*<View style={[styles.statDivider, { backgroundColor: colors.backgroundSelected }]} />
           <View style={styles.statItem}>
-            <Ionicons name="sparkles-outline" size={22} color="#0369A1" />
+            <Ionicons name="sparkles-outline" size={22} color="#C4325E" />
            <Text style={[styles.statValue, { color: colors.text }]}>{profileScore}%</Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Profil</Text>
           </View>*/}
@@ -451,7 +462,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {vibeLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#FFF0F3' }]}>
-                      <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{String(l ?? '')}</Text>
+                      <Text style={[styles.chipText, { color: '#C4325E' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -463,7 +474,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {dispoLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#E0F2FE' }]}>
-                      <Text style={[styles.chipText, { color: '#0369A1' }]}>{String(l ?? '')}</Text>
+                      <Text style={[styles.chipText, { color: '#C4325E' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -475,7 +486,7 @@ const lifestyleBadges = [
                 <View style={styles.chipsWrap}>
                   {irlLabels.map((l, i) => (
                     <View key={i} style={[styles.chip, { backgroundColor: '#E8D5F5' }]}>
-                      <Text style={[styles.chipText, { color: '#6D28D9' }]}>{String(l ?? '')}</Text>
+                      <Text style={[styles.chipText, { color: '#C4325E' }]}>{String(l ?? '')}</Text>
                     </View>
                   ))}
                 </View>
@@ -488,13 +499,13 @@ const lifestyleBadges = [
         {interests.sports.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="barbell-outline" size={16} color="#6D28D9" />
+              <Ionicons name="barbell-outline" size={16} color="#C4325E" />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Sports</Text>
             </View>
             <View style={styles.chipsWrap}>
               {interests.sports.map((s, i) => (
                 <View key={i} style={[styles.chip, { backgroundColor: '#EDE9FE' }]}>
-                  <Text style={[styles.chipText, { color: '#6D28D9' }]}>{String(s ?? '')}</Text>
+                  <Text style={[styles.chipText, { color: '#C4325E' }]}>{String(s ?? '')}</Text>
                 </View>
               ))}
             </View>
@@ -511,7 +522,7 @@ const lifestyleBadges = [
             <View style={styles.chipsWrap}>
               {interests.hobbies.map((h, i) => (
                 <View key={i} style={[styles.chip, { backgroundColor: PALETTE.rosePale }]}>
-                  <Text style={[styles.chipText, { color: '#CC3D5E' }]}>{String(h ?? '')}</Text>
+                  <Text style={[styles.chipText, { color: '#C4325E' }]}>{String(h ?? '')}</Text>
                 </View>
               ))}
             </View>
@@ -574,33 +585,39 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 18, marginBottom: Spacing.two },
   backBtn: { padding: Spacing.two },
 
-  // ── Floating back button ──
-  backCircle: {
-    position: 'absolute',
-    top: 56,
-    left: 16,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(0,0,0,0.38)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-  },
-
-  // ── Sticky name bar ──
-  stickyBar: {
+  // ── Top bar (Copines) ──
+  topBar: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 96,
-    justifyContent: 'flex-end',
-    paddingBottom: 12,
-    paddingHorizontal: 60,
-    zIndex: 15,
+    zIndex: 20,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EBEBEB',
   },
-  stickyName: { fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  topBarRow: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+  },
+  topBarRight: { flexDirection: 'row', alignItems: 'center' },
+  topBarBtn: { padding: 6, alignItems: 'center', justifyContent: 'center' },
+  wordmark: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 52,
+    lineHeight: 52,
+    textAlign: 'center',
+    fontSize: 21,
+    fontWeight: '800',
+    color: '#222222',
+    letterSpacing: -0.4,
+    zIndex: -1,
+  },
 
   // ── Gallery ──
   galleryContainer: { width: SCREEN_WIDTH, height: GALLERY_HEIGHT, position: 'relative', overflow: 'hidden' },
@@ -610,7 +627,7 @@ const styles = StyleSheet.create({
   // Bumble-style thin progress bars
   photoBars: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 58 : 44,
+    top: 14,
     left: 12,
     right: 12,
     flexDirection: 'row',
@@ -668,13 +685,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 16,
     marginTop: 12,
-    borderRadius: 20,
+    borderRadius: 14,
     paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
   statItem: { flex: 1, alignItems: 'center', gap: 4 },
   statDivider: { width: 1, alignSelf: 'stretch', marginVertical: 6 },
@@ -685,13 +704,15 @@ const styles = StyleSheet.create({
   section: {
     marginHorizontal: 16,
     marginTop: 12,
-    borderRadius: 20,
+    borderRadius: 14,
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
@@ -722,9 +743,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  voicePlayBtnActive: { backgroundColor: '#CC3D5E' },
+  voicePlayBtnActive: { backgroundColor: '#C4325E' },
   voiceWave: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, overflow: 'hidden' },
-  voiceBar: { width: 3, backgroundColor: 'rgba(255,143,163,0.45)', borderRadius: 2 },
+  voiceBar: { width: 3, backgroundColor: '#E3E3E3', borderRadius: 2 },
   voiceLabel: { fontSize: 13, fontWeight: '600', flexShrink: 0 },
 
   // ── Wall post grid ──

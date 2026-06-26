@@ -3,11 +3,18 @@ import { Stack, useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { AuthProvider } from '@/contexts/auth';
 import { SnackbarProvider } from '@/contexts/snackbar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { PoppinsFonts, applyDefaultFont } from '@/utils/fonts';
+
+// Make Poppins the app-wide default font before any text renders.
+applyDefaultFont();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const colorScheme = useColorScheme();
@@ -61,6 +68,12 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts(PoppinsFonts);
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
+
   useEffect(() => {
     // react-native-purchases is native-only — skip on web and Expo Go
     if (Platform.OS === 'web') return;
@@ -76,6 +89,8 @@ export default function RootLayout() {
       Purchases.configure({ apiKey });
     }).catch(() => {});
   }, []);
+
+  if (!fontsLoaded) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

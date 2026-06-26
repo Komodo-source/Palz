@@ -25,15 +25,15 @@ import ConfettiCannon from '@/components/ConfettiCannon';
 import { EventsSkeleton } from '@/components/Skeleton';
 
 const CATEGORY_META = {
-  bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
-  bowling:    { label: 'Bowling',    icon: 'trophy-outline',     color: '#3B82F6' },
-  cinema:     { label: 'Cinéma',     icon: 'film-outline',       color: '#F59E0B' },
-  restaurant: { label: 'Restaurant', icon: 'restaurant-outline', color: '#10B981' },
-  sport:      { label: 'Sport',      icon: 'fitness-outline',    color: '#EF4444' },
-  cafe:       { label: 'Café',       icon: 'cafe-outline',       color: '#92400E' },
-  plage:      { label: 'Plage',      icon: 'sunny-outline',      color: '#F97316' },
-  parc:       { label: 'Parc',       icon: 'leaf-outline',       color: '#22C55E' },
-  autre:      { label: 'Autre',      icon: 'star-outline',       color: '#FF8FA3' },
+  bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#C4325E' },
+  bowling:    { label: 'Bowling',    icon: 'trophy-outline',     color: '#C4325E' },
+  cinema:     { label: 'Cinéma',     icon: 'film-outline',       color: '#C4325E' },
+  restaurant: { label: 'Restaurant', icon: 'restaurant-outline', color: '#C4325E' },
+  sport:      { label: 'Sport',      icon: 'fitness-outline',    color: '#C4325E' },
+  cafe:       { label: 'Café',       icon: 'cafe-outline',       color: '#C4325E' },
+  plage:      { label: 'Plage',      icon: 'sunny-outline',      color: '#C4325E' },
+  parc:       { label: 'Parc',       icon: 'leaf-outline',       color: '#C4325E' },
+  autre:      { label: 'Autre',      icon: 'star-outline',       color: '#C4325E' },
 };
 
 const FILTERS = [
@@ -43,7 +43,7 @@ const FILTERS = [
 ];
 
 const CATEGORY_FILTERS = [
-  { key: null, label: 'Toutes', icon: 'grid-outline', color: '#FF8FA3' },
+  { key: null, label: 'Toutes', icon: 'grid-outline', color: '#C4325E' },
   ...Object.entries(CATEGORY_META).map(([key, v]) => ({ key, ...v })),
 ];
 
@@ -466,7 +466,7 @@ export default function EventsScreen() {
     const rawLabels = parseDbJson(user.labels);
     const vibeLabels = rawLabels?.vibe || [];
     const dispoLabels = rawLabels?.dispo || [];
-    if (vibeLabels.length > 0) return `Basé sur ton vibe ${vibeLabels[0]} ${vibeLabels[0] === 'Sportive' ? '🏃' : vibeLabels[0] === 'Créative' ? '🎨' : vibeLabels[0] === 'Foodie' ? '🍝' : vibeLabels[0] === 'Geek' ? '🎮' : vibeLabels[0] === 'Spontanée' ? '✨' : vibeLabels[0] === 'Homebody' ? '🏠' : vibeLabels[0] === 'Voyageuse' ? '✈️' : vibeLabels[0] === 'Bookworm' ? '📚' : vibeLabels[0] === 'Ambitieuse' ? '💪' : '🌸'}`;
+    if (vibeLabels.length > 0) return `Basé sur ton vibe ${vibeLabels[0]} ${vibeLabels[0] === 'Sportive' ? '🏃' : vibeLabels[0] === 'Créative' ? '🎨' : vibeLabels[0] === 'Foodie' ? '🍝' : vibeLabels[0] === 'Geek' ? '🎮' : vibeLabels[0] === 'Spontanée' ? '✨' : vibeLabels[0] === 'Homebody' ? '🏠' : vibeLabels[0] === 'Voyageuse' ? '✈️' : vibeLabels[0] === 'Bookworm' ? '📚' : vibeLabels[0] === 'Ambitieuse' ? '💪' : '🍒'}`;
     if (dispoLabels.length > 0) return `${dispoLabels[0]} · dispo 📅`;
     return 'Recommandé pour toi';
   };
@@ -1073,7 +1073,7 @@ const styles = StyleSheet.create({
     width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff',
     backgroundColor: '#EDE8F5', alignItems: 'center', justifyContent: 'center', marginLeft: -8,
   },
-  cardAvatarMoreTxt: { fontSize: 9, fontWeight: '800', color: '#7B61A8' },
+  cardAvatarMoreTxt: { fontSize: 9, fontWeight: '800', color: '#C4325E' },
   cardAttendeesTxt: { fontSize: 11, fontWeight: '600', marginLeft: 7 },
 
   cardJoinBtn: {
@@ -1169,7 +1169,7 @@ const styles = StyleSheet.create({
   ceSoirMoonBadge: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: '#12102A', alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
+    shadowColor: '#C4325E', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
   },
   ceSoirMoonEmoji: { fontSize: 20 },
   ceSoirSectionTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
@@ -1186,7 +1186,7 @@ const styles = StyleSheet.create({
   // Ce soir card (redesigned)
   ceSoirCard: {
     width: 165, height: 210, borderRadius: 22, padding: 14, backgroundColor: '#12102A',
-    shadowColor: '#6D28D9', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.32, shadowRadius: 12, elevation: 9,
+    shadowColor: '#C4325E', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.32, shadowRadius: 12, elevation: 9,
     overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
     justifyContent: 'flex-start', gap: 5,
   },
@@ -1208,7 +1208,7 @@ const styles = StyleSheet.create({
   ceSoirSuggestChipText: { fontSize: 10, fontWeight: '700' },
 
   // Create card
-  ceSoirCreateCard: { justifyContent: 'center', alignItems: 'center', borderColor: 'rgba(255,143,163,0.3)', borderStyle: 'dashed' },
+  ceSoirCreateCard: { justifyContent: 'center', alignItems: 'center', borderColor: 'rgba(196,50,94,0.3)', borderStyle: 'dashed' },
   ceSoirCreateTitle: { fontSize: 14, fontWeight: '800', color: '#fff', marginTop: 4 },
   ceSoirCreateSub: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '500', textAlign: 'center' },
 

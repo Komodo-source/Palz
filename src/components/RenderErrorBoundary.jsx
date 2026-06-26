@@ -53,7 +53,7 @@ export default class RenderErrorBoundary extends React.Component {
     if (this.state.error) {
       return (
         <View style={styles.wrap}>
-          <Text style={styles.emoji}>🌸</Text>
+          <Text style={styles.emoji}>🍒</Text>
           <Text style={styles.title}>Oups, un souci d&apos;affichage</Text>
           <Text style={styles.sub} numberOfLines={4}>
             {String(this.state.error?.message || 'Erreur inconnue')}
@@ -80,21 +80,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
     gap: 12,
-    backgroundColor: '#FFF9F5',
+    backgroundColor: '#FFFFFF',
   },
   emoji: { fontSize: 48 },
-  title: { fontSize: 20, fontWeight: '800', color: '#4A3728', textAlign: 'center' },
-  sub: { fontSize: 13, color: '#7A6B60', textAlign: 'center', lineHeight: 19 },
+  title: { fontSize: 20, fontWeight: '800', color: '#222222', textAlign: 'center' },
+  sub: { fontSize: 13, color: '#717171', textAlign: 'center', lineHeight: 19 },
   stack: {
     fontSize: 10,
-    color: '#B0A098',
+    color: '#9A9A9A',
     textAlign: 'center',
     lineHeight: 14,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   btn: {
     marginTop: 8,
-    backgroundColor: '#FF8FA3',
+    backgroundColor: '#C4325E',
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 16,

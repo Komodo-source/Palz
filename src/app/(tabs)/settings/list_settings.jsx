@@ -143,7 +143,7 @@ export default function ListSettings() {
     } catch {
       Alert.alert(
         'Bientôt disponible',
-        'Palz sera bientôt sur les stores. Merci pour ton soutien ! 🌸',
+        'Palz sera bientôt sur les stores. Merci pour ton soutien ! 🍒',
         [{ text: 'OK' }]
       );
     }
@@ -412,7 +412,7 @@ export default function ListSettings() {
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="notifications-outline" size={18} color="#2196F3" />
+                <Ionicons name="notifications-outline" size={18} color="#C4325E" />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Notifications push</Text>
             </View>
@@ -446,7 +446,7 @@ export default function ListSettings() {
           <TouchableOpacity style={styles.row} onPress={handleSounds} activeOpacity={0.7}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: '#F3E5F5' }]}>
-                <Ionicons name="volume-high-outline" size={18} color="#9C27B0" />
+                <Ionicons name="volume-high-outline" size={18} color="#C4325E" />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Sons</Text>
             </View>
@@ -516,10 +516,10 @@ export default function ListSettings() {
           <View style={[styles.premiumBanner, { backgroundColor: isDark ? '#3D2D4A' : '#F0E8FF' }]}>
             <View style={styles.premiumBannerLeft}>
               <View style={[styles.premiumIconWrap, { backgroundColor: isDark ? '#6B5080' : '#E8D5F5' }]}>
-                <Ionicons name="star" size={22} color={user?.is_premium ? '#7B61A8' : PALETTE.rose} />
+                <Ionicons name="star" size={22} color={user?.is_premium ? '#C4325E' : PALETTE.rose} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.premiumTitle, { color: user?.is_premium ? '#7B61A8' : colors.text }]}>
+                <Text style={[styles.premiumTitle, { color: user?.is_premium ? '#C4325E' : colors.text }]}>
                   {user?.is_premium ? 'Palz Premium' : 'Passe en Premium'}
                 </Text>
                 <Text style={[styles.premiumSub, { color: colors.textSecondary }]}>
@@ -546,7 +546,7 @@ export default function ListSettings() {
               <TouchableOpacity style={styles.row} onPress={handleManageSubscription} activeOpacity={0.7}>
                 <View style={styles.rowLeft}>
                   <View style={[styles.iconBox, { backgroundColor: '#F3E5F5' }]}>
-                    <Ionicons name="settings-outline" size={18} color="#9C27B0" />
+                    <Ionicons name="settings-outline" size={18} color="#C4325E" />
                   </View>
                   <Text style={[styles.rowLabel, { color: colors.text }]}>Gérer mon abonnement</Text>
                 </View>
@@ -563,7 +563,7 @@ export default function ListSettings() {
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
-              <View style={[styles.iconBox, { backgroundColor: isDark ? '#3D332E' : '#FFF9F5' }]}>
+              <View style={[styles.iconBox, { backgroundColor: isDark ? '#3D332E' : '#FFFFFF' }]}>
                 <Ionicons name={isDark ? 'moon' : 'sunny-outline'} size={18} color={isDark ? '#9C7FD4' : '#F59E0B'} />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Mode sombre</Text>
@@ -585,7 +585,7 @@ export default function ListSettings() {
           <TouchableOpacity style={styles.row} onPress={handleShare} activeOpacity={0.7}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="share-social-outline" size={18} color="#2196F3" />
+                <Ionicons name="share-social-outline" size={18} color="#C4325E" />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Partager l&apos;app</Text>
             </View>
@@ -645,7 +645,7 @@ export default function ListSettings() {
           >
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: '#E3F2FD' }]}>
-                <Ionicons name="shield-checkmark-outline" size={18} color="#2196F3" />
+                <Ionicons name="shield-checkmark-outline" size={18} color="#C4325E" />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Politique de confidentialité</Text>
             </View>
@@ -657,7 +657,7 @@ export default function ListSettings() {
           <TouchableOpacity style={styles.row} onPress={handleContactUs} activeOpacity={0.7}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconBox, { backgroundColor: '#F3E5F5' }]}>
-                <Ionicons name="mail-outline" size={18} color="#9C27B0" />
+                <Ionicons name="mail-outline" size={18} color="#C4325E" />
               </View>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Nous contacter</Text>
             </View>
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   premiumBtn: {
-    backgroundColor: '#7B61A8',
+    backgroundColor: '#C4325E',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -951,7 +951,7 @@ const styles = StyleSheet.create({
   blockedAvatarText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#FF8FA3',
+    color: '#C4325E',
   },
   blockedName: {
     flex: 1,
@@ -970,7 +970,7 @@ const styles = StyleSheet.create({
   unblockBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FF8FA3',
+    color: '#C4325E',
   },
   modalCloseBtn: {
     alignItems: 'center',

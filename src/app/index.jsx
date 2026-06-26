@@ -11,7 +11,7 @@ export default function RootIndex() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }}>
-        <ActivityIndicator size="large" color="#FF6B8A" />
+        <ActivityIndicator size="large" color="#C4325E" />
         <Text style={{ marginTop: 12, color: '#000' }}>Ça arrive ...</Text>
       </View>
     );

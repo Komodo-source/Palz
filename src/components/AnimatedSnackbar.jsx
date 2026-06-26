@@ -24,7 +24,7 @@ const VARIANTS = {
     color: '#fff',
   },
   info: {
-    bg: '#8B5CF6',
+    bg: '#C4325E',
     icon: 'sparkles',
     color: '#fff',
   },
@@ -34,7 +34,7 @@ const VARIANTS = {
     color: '#fff',
   },
   like: {
-    bg: '#FF8FA3',
+    bg: '#C4325E',
     icon: 'heart',
     color: '#fff',
   },

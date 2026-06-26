@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/auth';
 import { useGoogleAuth } from '@/hooks/use-google-auth';
@@ -21,7 +21,7 @@ import { PALETTE } from '@/constants/theme';
 // Avatar trio shown in the hero illustration strip
 const AVATARS = [
   { uri: 'https://images.pexels.com/photos/1267708/pexels-photo-1267708.jpeg?auto=compress&cs=tinysrgb&w=300', name: 'Léa', icon: 'heart' },
-  { uri: 'https://images.pexels.com/photos/3937468/pexels-photo-3937468.jpeg?auto=compress&cs=tinysrgb&w=300', name: 'Manon', icon: 'flower' },
+  { uri: 'https://images.pexels.com/photos/3937468/pexels-photo-3937468.jpeg?auto=compress&cs=tinysrgb&w=300', name: 'Manon', icon: 'cherry' },
   { uri: 'https://images.pexels.com/photos/28320375/pexels-photo-28320375.jpeg?auto=compress&cs=tinysrgb&w=300', name: 'Chloé', icon: 'rose' },
 ];
 
@@ -69,10 +69,10 @@ export default function LandingScreen() {
 
       {/* ── Soft decorative background blobs ── */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <View style={[styles.blob, { width: 220, height: 220, top: -60, right: -60, backgroundColor: 'rgba(255,143,163,0.18)' }]} />
+        <View style={[styles.blob, { width: 220, height: 220, top: -60, right: -60, backgroundColor: 'rgba(196,50,94,0.18)' }]} />
         <View style={[styles.blob, { width: 160, height: 160, top: 140, left: -50, backgroundColor: 'rgba(123,97,168,0.10)' }]} />
-        <View style={[styles.blob, { width: 300, height: 300, bottom: 60, right: -110, backgroundColor: 'rgba(255,143,163,0.12)' }]} />
-        <View style={[styles.blob, { width: 180, height: 180, bottom: 200, left: -50, backgroundColor: 'rgba(255,181,194,0.22)' }]} />
+        <View style={[styles.blob, { width: 300, height: 300, bottom: 60, right: -110, backgroundColor: 'rgba(196,50,94,0.12)' }]} />
+        <View style={[styles.blob, { width: 180, height: 180, bottom: 200, left: -50, backgroundColor: 'rgba(224,122,149,0.22)' }]} />
       </View>
 
       <View style={[styles.content, { paddingTop: insets.top + 28, paddingBottom: insets.bottom + 28 }]}>
@@ -80,7 +80,7 @@ export default function LandingScreen() {
         {/* ── Logo zone ── */}
         <View style={styles.logoZone}>
           <View style={styles.appIcon}>
-            <Ionicons name="flower" size={50} color="#fff" />
+            <MaterialCommunityIcons name="fruit-cherries" size={50} color="#fff" />
             <View style={styles.iconSparkle}>
               <Ionicons name="sparkles" size={14} color={PALETTE.roseLight} />
             </View>
@@ -90,10 +90,10 @@ export default function LandingScreen() {
             <Text style={{ color: PALETTE.rose }}>C</Text>opines
           </Text>
 
-          <View style={styles.flowerRow}>
-            <Ionicons name="flower-outline" size={16} color={PALETTE.roseLight} />
-            <Ionicons name="rose-outline" size={18} color={PALETTE.rose} />
-            <Ionicons name="flower-outline" size={16} color={PALETTE.roseLight} />
+          <View style={styles.cherryRow}>
+            <MaterialCommunityIcons name="fruit-cherries" size={16} color={PALETTE.roseLight} />
+            <MaterialCommunityIcons name="fruit-cherries" size={18} color={PALETTE.rose} />
+            <MaterialCommunityIcons name="fruit-cherries" size={16} color={PALETTE.roseLight} />
           </View>
 
           <Text style={styles.tagline}>
@@ -112,7 +112,9 @@ export default function LandingScreen() {
                 <View style={[styles.avatarImgWrap, center && styles.avatarImgWrapCenter, { width: size, height: size, borderRadius: size / 2 }]}>
                   <Image source={{ uri: a.uri }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                   <View style={styles.avatarBadge}>
-                    <Ionicons name={a.icon} size={11} color={PALETTE.rose} />
+                    {a.icon === 'cherry'
+                      ? <MaterialCommunityIcons name="fruit-cherries" size={11} color={PALETTE.rose} />
+                      : <Ionicons name={a.icon} size={11} color={PALETTE.rose} />}
                   </View>
                 </View>
                 <Text style={styles.avatarName}>{a.name}</Text>
@@ -133,7 +135,7 @@ export default function LandingScreen() {
               <ActivityIndicator color={PALETTE.textMid} />
             ) : (
               <>
-                <Ionicons name="logo-google" size={20} color="#2D1B2E" />
+                <Ionicons name="logo-google" size={20} color="#222222" />
                 <Text style={styles.googleBtnText}>Continuer avec Google</Text>
               </>
             )}
@@ -200,20 +202,20 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 40,
     fontWeight: '800',
-    color: '#2D1B2E',
+    color: '#222222',
     letterSpacing: -0.5,
     marginTop: 18,
   },
-  flowerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  cherryRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   tagline: {
     marginTop: 22,
     fontSize: 17,
     fontWeight: '600',
-    color: '#6B4A5E',
+    color: '#717171',
     textAlign: 'center',
     lineHeight: 26,
   },
-  taglineHighlight: { color: '#7B61A8', fontWeight: '800' },
+  taglineHighlight: { color: '#C4325E', fontWeight: '800' },
 
   // Avatars
   illustrationStrip: {
@@ -263,14 +265,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#fff',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,143,163,0.25)',
+    borderColor: 'rgba(196,50,94,0.25)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
   },
-  googleBtnText: { fontSize: 15, fontWeight: '600', color: '#2D1B2E' },
+  googleBtnText: { fontSize: 15, fontWeight: '600', color: '#222222' },
   googleError: { color: PALETTE.error, fontSize: 12, textAlign: 'center' },
 
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -285,7 +287,7 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 20,
     backgroundColor: PALETTE.rose,
-    shadowColor: '#FF6B8A',
+    shadowColor: '#C4325E',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
@@ -295,7 +297,7 @@ const styles = StyleSheet.create({
 
   loginLink: { alignItems: 'center', paddingVertical: 2 },
   loginLinkText: { fontSize: 14, fontWeight: '600', color: '#B49CB0' },
-  loginLinkAccent: { color: '#7B61A8', fontWeight: '800' },
+  loginLinkAccent: { color: '#C4325E', fontWeight: '800' },
 
   terms: {
     textAlign: 'center',

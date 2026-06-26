@@ -4,13 +4,13 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const PALETTE = {
-  rose: '#FF8FA3',
+  rose: '#C4325E',
   rosePale: '#FFF0F3',
   goldLight: '#FEF3C7',
   gold: '#F59E0B',
-  cream: '#FFF9F5',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
+  cream: '#FFFFFF',
+  textDark: '#222222',
+  textMid: '#717171',
 };
 
 export default function PayementRedirection() {

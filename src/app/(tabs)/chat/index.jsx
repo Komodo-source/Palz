@@ -72,7 +72,7 @@ export default function ChatListScreen() {
 
       <View style={[styles.avatar, { backgroundColor: colors.backgroundSelected }]}>
         <Text style={styles.avatarEmoji}>
-          {item.other_user?.profile_image ? '👤' : '🌸'}
+          {item.other_user?.profile_image ? '👤' : '🍒'}
         </Text>
       </View>
       <View style={styles.conversationInfo}>
@@ -94,7 +94,7 @@ export default function ChatListScreen() {
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#FF6B8A" />
+        <ActivityIndicator size="large" color="#C4325E" />
       </View>
     );
   }
@@ -110,7 +110,7 @@ export default function ChatListScreen() {
         renderItem={renderConversation}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#FF6B8A" />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#C4325E" />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>

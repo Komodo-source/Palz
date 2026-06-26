@@ -17,7 +17,7 @@ import {
   Modal,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   useAudioRecorder,
   useAudioPlayer,
@@ -35,7 +35,10 @@ import { parseDbJson } from '@/utils/parsers';
 import { useSnackbar } from '@/contexts/snackbar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PHOTO_SIZE = (SCREEN_WIDTH - 48 - 16) / 3;
+// 2-column grid: card has 24px padding each side (48) and one 8px gap between
+// columns, so two tiles fill the card width — 4 photos form a clean 2×2 with no
+// lone tile / leftover blanks.
+const PHOTO_SIZE = (SCREEN_WIDTH - 48 - 8) / 2;
 
 // ── Helpers ──
 const extractFilename = (url) => {
@@ -59,21 +62,21 @@ const extractFilename = (url) => {
 const asStr = (v) => (typeof v === 'string' ? v : '');
 
 const PALETTE = {
-  rose: '#FF8FA3',
-  roseLight: '#FFB5C2',
+  rose: '#C4325E',
+  roseLight: '#E07A95',
   rosePale: '#FFF0F3',
   lavender: '#E8D5F5',
   lavenderPale: '#F8F4FF',
-  cream: '#FFF9F5',
+  cream: '#FFFFFF',
   white: '#FFFFFF',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
-  textLight: '#B0A098',
-  border: '#F0E0E0',
+  textDark: '#222222',
+  textMid: '#717171',
+  textLight: '#9A9A9A',
+  border: '#EBEBEB',
   cardBg: '#FFFFFF',
   success: '#98D8AA',
   error: '#FF6B6B',
-  shadow: '#FFB5C2',
+  shadow: '#E07A95',
 };
 
 const SITUATION_OPTIONS = [
@@ -738,9 +741,9 @@ export default function ProfileEditingScreen() {
           </View>
           <Text style={styles.sectionHint}>Choisis jusqu'à 3 par catégorie</Text>
           {[
-            { key: 'vibe', title: 'Vibe', color: '#CC3D5E', bg: '#FFF0F3', options: ['Créative','Sportive','Homebody','Spontanée','Ambitieuse','Artiste','Voyageuse','Bookworm','Foodie','Geek'] },
-            { key: 'dispo', title: 'Dispo', color: '#0369A1', bg: '#E0F2FE', options: ['Soirées','Brunchs','Voyages','Sport','Musées/Expos','Concerts','Apéros','Randos','Cinéma','Yoga'] },
-            { key: 'irl', title: 'IRL', color: '#6D28D9', bg: '#E8D5F5', options: ['Chien','Chat','Voiture','Propriétaire','Locataire','Non-fumeur','Végétarienne','Étudiante','Freelance','Télétravail'] },
+            { key: 'vibe', title: 'Vibe', color: '#C4325E', bg: '#FFF0F3', options: ['Créative','Sportive','Homebody','Spontanée','Ambitieuse','Artiste','Voyageuse','Bookworm','Foodie','Geek'] },
+            { key: 'dispo', title: 'Dispo', color: '#C4325E', bg: '#FFF0F3', options: ['Soirées','Brunchs','Voyages','Sport','Musées/Expos','Concerts','Apéros','Randos','Cinéma','Yoga'] },
+            { key: 'irl', title: 'IRL', color: '#C4325E', bg: '#FFF0F3', options: ['Chien','Chat','Voiture','Propriétaire','Locataire','Non-fumeur','Végétarienne','Étudiante','Freelance','Télétravail'] },
           ].map(({ key, title, color, bg, options }) => (
             <View key={key} style={{ marginBottom: 14 }}>
               <Text style={[styles.labelCategoryTitle, { color }]}>{title}</Text>
@@ -1036,11 +1039,11 @@ export default function ProfileEditingScreen() {
         {/* ── Audio Fun Fact (Premium) ── */}
         <View style={[styles.card, styles.premiumCard]}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="mic-outline" size={20} color="#7B61A8" />
+            <Ionicons name="mic-outline" size={20} color="#C4325E" />
             <Text style={styles.sectionTitle}>Fun fact vocale</Text>
             {!user?.is_premium && (
               <View style={styles.premiumBadge}>
-                <Ionicons name="star" size={10} color="#7B61A8" style={{ marginRight: 3 }} />
+                <Ionicons name="star" size={10} color="#C4325E" style={{ marginRight: 3 }} />
                 <Text style={styles.premiumBadgeText}>Premium</Text>
               </View>
             )}
@@ -1055,7 +1058,7 @@ export default function ProfileEditingScreen() {
               onPress={() => router.push('/(tabs)/profil/payement_page')}
               activeOpacity={0.8}
             >
-              <Ionicons name="star" size={26} color="#7B61A8" />
+              <Ionicons name="star" size={26} color="#C4325E" />
               <Text style={styles.premiumLockText}>
                 Passe en Premium pour débloquer les fun facts vocales
               </Text>
@@ -1075,7 +1078,7 @@ export default function ProfileEditingScreen() {
                     <Ionicons
                       name={isPlayingAudio ? 'pause' : 'play'}
                       size={18}
-                      color={isPlayingAudio ? '#7B61A8' : PALETTE.white}
+                      color={isPlayingAudio ? '#C4325E' : PALETTE.white}
                     />
                   </TouchableOpacity>
                   <View style={styles.audioInfo}>
@@ -1156,7 +1159,7 @@ export default function ProfileEditingScreen() {
 
         {/* ── Success overlay ── */}
         <Animated.View style={[styles.successOverlay, { opacity: saveOpacity }]} pointerEvents="none">
-          <Ionicons name="flower-outline" size={64} color={PALETTE.rose} />
+          <MaterialCommunityIcons name="fruit-cherries" size={64} color={PALETTE.rose} />
           <Text style={styles.successText}>Profil mis à jour !</Text>
         </Animated.View>
       </ScrollView>
@@ -1203,6 +1206,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE.textDark,
     letterSpacing: -0.3,
+    marginBottom: 5,
   },
   subtitle: {
     textAlign: 'center',
@@ -1573,7 +1577,7 @@ const styles = StyleSheet.create({
   premiumBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#7B61A8',
+    color: '#C4325E',
   },
   premiumLock: {
     backgroundColor: PALETTE.white,
@@ -1592,7 +1596,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   premiumLockBtn: {
-    backgroundColor: '#7B61A8',
+    backgroundColor: '#C4325E',
     borderRadius: 14,
     paddingHorizontal: 20,
     paddingVertical: 10,

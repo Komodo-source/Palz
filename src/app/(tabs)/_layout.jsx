@@ -61,7 +61,7 @@ function TabIcon({ name, focused, badge, dot }) {
       <Ionicons
         name={icons[name] || 'ellipse'}
         size={focused ? 26 : 24}
-        color={focused ? '#FF8FA3' : '#B0A098'}
+        color={focused ? '#C4325E' : '#9A9A9A'}
       />
       {badge > 0 ? (
         <View style={styles.tabBadge}>
@@ -80,7 +80,7 @@ function TabLabel({ label, focused }) {
       style={[
         styles.tabLabel,
         {
-          color: focused ? '#FF8FA3' : '#B0A098',
+          color: focused ? '#C4325E' : '#9A9A9A',
           fontWeight: focused ? '700' : '500',
         },
       ]}
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#FF8FA3',
+    backgroundColor: '#C4325E',
     borderWidth: 1.5,
     borderColor: '#fff',
   },

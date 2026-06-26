@@ -12,7 +12,7 @@ import {
   Share,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/contexts/auth';
 import { getColors, Spacing, PALETTE } from '@/constants/theme';
@@ -243,7 +243,7 @@ const formatDate = (dob) => {
           <Text style={styles.title}>Mon Profil</Text>
           {user?.is_premium && (
             <View style={styles.premiumBadge}>
-              <Ionicons name="star" size={13} color="#7B61A8" />
+              <Ionicons name="star" size={13} color="#C4325E" />
               <Text style={styles.premiumText}>Premium</Text>
             </View>
           )}
@@ -339,16 +339,16 @@ const formatDate = (dob) => {
           <Text style={[styles.cardTitle, { color: colors.text }]}>Informations</Text>
         </View>
 
-        <InfoRow icon="mail-outline" label="Email" value={user?.email} color="#5B8FF9" />
+        <InfoRow icon="mail-outline" label="Email" value={user?.email} color={PALETTE.rose} />
         <InfoRow icon="calendar-outline" label="Date de naissance" value={formatDate(user?.date_of_birth)} color={PALETTE.rose} />
-        <InfoRow icon="briefcase-outline" label="Métier" value={user?.work} color="#52C41A" />
-        <InfoRow icon="heart-outline" label="Situation" value={situationLabel} color="#FF7E7E" />
-        <InfoRow icon="location-outline" label="Localisation" value={user?.location || user?.home_location} color="#FFA940" />
+        <InfoRow icon="briefcase-outline" label="Métier" value={user?.work} color={PALETTE.rose} />
+        <InfoRow icon="heart-outline" label="Situation" value={situationLabel} color={PALETTE.rose} />
+        <InfoRow icon="location-outline" label="Localisation" value={user?.location || user?.home_location} color={PALETTE.rose} />
         <InfoRow
           icon="star-outline"
           label="Signe astrologique"
           value={user?.astrology_sign_id ? 'Renseigné' : null}
-          color="#B37FEB"
+          color={PALETTE.rose}
         />
       </Animated.View>
 
@@ -379,10 +379,10 @@ const formatDate = (dob) => {
           <Ionicons
             name={user?.is_premium ? 'star' : 'star-outline'}
             size={22}
-            color={user?.is_premium ? '#7B61A8' : PALETTE.rose}
+            color={user?.is_premium ? '#C4325E' : PALETTE.rose}
           />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.membershipTitle, { color: user?.is_premium ? '#7B61A8' : PALETTE.rose }]}>
+            <Text style={[styles.membershipTitle, { color: user?.is_premium ? '#C4325E' : PALETTE.rose }]}>
               {user?.is_premium ? 'Premium' : 'Gratuit'}
             </Text>
             <Text style={[styles.membershipSub, { color: colors.textSecondary }]}>
@@ -476,12 +476,14 @@ const formatDate = (dob) => {
           <View style={styles.recapStatsGrid}>
             {[
               { value: weekStats?.messages ?? 0, label: 'Conversations actives', icon: 'chatbubbles', color: '#C4AEE8' },
-              { value: weekStats?.interests ?? 0, label: 'Connexions communes', icon: 'sparkles', color: '#FF8FA3' },
+              { value: weekStats?.interests ?? 0, label: 'Connexions communes', icon: 'sparkles', color: '#C4325E' },
               { value: weekStats?.events ?? 0, label: 'Sorties rejointes', icon: 'calendar', color: '#FFD764' },
-              { value: weekStats?.messages ? Math.max(1, Math.round(weekStats.messages * 1.5)) : 0, label: 'Réactions reçues', icon: 'flower', color: '#FF8FA3' },
+              { value: weekStats?.messages ? Math.max(1, Math.round(weekStats.messages * 1.5)) : 0, label: 'Réactions reçues', icon: 'cherry', color: '#C4325E' },
             ].map(({ value, label, icon, color }) => (
               <View key={label} style={styles.recapTile}>
-                <Ionicons name={icon} size={18} color={color} style={{ marginBottom: 4 }} />
+                {icon === 'cherry'
+                  ? <MaterialCommunityIcons name="fruit-cherries" size={18} color={color} style={{ marginBottom: 4 }} />
+                  : <Ionicons name={icon} size={18} color={color} style={{ marginBottom: 4 }} />}
                 <Text style={[styles.recapTileNumber, { color }]}>{value}</Text>
                 <Text style={styles.recapTileLabel}>{label}</Text>
               </View>
@@ -491,7 +493,7 @@ const formatDate = (dob) => {
           {/* Quote */}
           <View style={styles.recapQuote}>
             <Text style={styles.recapQuoteText}>
-              {"L'amitié, c'est un jardin que l'on cultive ensemble — chaque message, chaque sourire, une petite fleur qui éclot."}
+              {"L'amitié, c'est un cerisier que l'on cultive ensemble — chaque message, chaque sourire, une petite cerise qui mûrit."}
             </Text>
             <Text style={styles.recapQuoteAuthor}>Ton vibe : {getTopVibe(user)}</Text>
           </View>
@@ -550,11 +552,11 @@ const styles = StyleSheet.create({
   premiumText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#7B61A8',
+    color: '#C4325E',
   },
   avatarSection: {
     alignItems: 'center',
-    marginTop: -55,
+    marginTop: 8,
     marginBottom: 8,
   },
   avatarWrap: {
@@ -788,7 +790,7 @@ const styles = StyleSheet.create({
   recapOverlay: { flex: 1, backgroundColor: 'rgba(13,13,26,0.92)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
   recapBox: { width: '100%', maxWidth: 380, borderRadius: 28, padding: 26, alignItems: 'center', overflow: 'hidden', backgroundColor: '#1A1A2E', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 30, elevation: 18 },
   recapStar: { position: 'absolute', backgroundColor: 'rgba(255,255,240,0.7)' },
-  recapGlow: { position: 'absolute', top: -60, alignSelf: 'center', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,143,163,0.14)' },
+  recapGlow: { position: 'absolute', top: -60, alignSelf: 'center', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(196,50,94,0.14)' },
   recapWeekLabel: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginBottom: 10 },
   recapWeekLabelText: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.6, textTransform: 'uppercase' },
   recapTitle: { fontSize: 23, fontWeight: '800', textAlign: 'center', letterSpacing: -0.3, color: '#fff' },
@@ -797,10 +799,10 @@ const styles = StyleSheet.create({
   recapTile: { width: '47%', flexGrow: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 14, alignItems: 'center' },
   recapTileNumber: { fontSize: 30, fontWeight: '800', lineHeight: 32 },
   recapTileLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', fontWeight: '700', marginTop: 4, textAlign: 'center', lineHeight: 14 },
-  recapQuote: { width: '100%', backgroundColor: 'rgba(255,143,163,0.1)', borderLeftWidth: 3, borderLeftColor: 'rgba(255,143,163,0.5)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 20 },
+  recapQuote: { width: '100%', backgroundColor: 'rgba(196,50,94,0.1)', borderLeftWidth: 3, borderLeftColor: 'rgba(196,50,94,0.5)', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 20 },
   recapQuoteText: { fontStyle: 'italic', fontSize: 13, color: 'rgba(255,255,255,0.78)', lineHeight: 21, fontWeight: '600' },
-  recapQuoteAuthor: { fontSize: 11, color: 'rgba(255,143,163,0.8)', fontWeight: '700', marginTop: 8 },
-  recapShareBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 28, borderWidth: 2, borderColor: PALETTE.rose, backgroundColor: 'rgba(255,143,163,0.12)', marginTop: 22 },
+  recapQuoteAuthor: { fontSize: 11, color: 'rgba(196,50,94,0.8)', fontWeight: '700', marginTop: 8 },
+  recapShareBtn: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 28, borderWidth: 2, borderColor: PALETTE.rose, backgroundColor: 'rgba(196,50,94,0.12)', marginTop: 22 },
   recapShareBtnText: { color: PALETTE.rose, fontWeight: '700', fontSize: 15 },
   recapCloseBtn: { alignItems: 'center', paddingVertical: 12, paddingHorizontal: 20, marginTop: 8 },
   recapCloseBtnText: { color: 'rgba(255,255,255,0.4)', fontWeight: '700', fontSize: 13 },

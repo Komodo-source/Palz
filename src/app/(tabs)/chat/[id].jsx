@@ -18,6 +18,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -29,6 +30,9 @@ import {
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMG_BUBBLE_W = SCREEN_WIDTH * 0.6;
+
+// Quick-reaction emojis offered when long-pressing a message
+const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
 // ── Date separator helpers ──
 function formatDateSeparator(dateStr) {
@@ -230,6 +234,7 @@ export default function ChatScreen() {
   const isDark = colorScheme === 'dark';
 
   const [messages, setMessages] = useState([]);
+  const [reactTarget, setReactTarget] = useState(null); // message the reaction picker is open for
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -370,6 +375,35 @@ export default function ChatScreen() {
       message_type: item.message_type,
       isMine: item.sender_id === currentUser?.id,
     });
+  };
+
+  // Toggle an emoji reaction on a message, with an optimistic UI update.
+  const handleReact = async (item, emoji) => {
+    if (!item?.id) return;
+    setReactTarget(null);
+    const uid = currentUser?.id;
+    setMessages((prev) => prev.map((m) => {
+      if (m.id !== item.id) return m;
+      const reactions = Array.isArray(m.reactions) ? m.reactions : [];
+      const mine = reactions.find((r) => r.user_id === uid);
+      let next;
+      if (mine && mine.emoji === emoji) {
+        next = reactions.filter((r) => r.user_id !== uid); // toggle off
+      } else {
+        next = [...reactions.filter((r) => r.user_id !== uid), { user_id: uid, emoji }];
+      }
+      return { ...m, reactions: next };
+    }));
+    try {
+      const res = await messagesApi.reactToMessage(item.id, emoji);
+      const reactions = res.data?.reactions;
+      if (Array.isArray(reactions)) {
+        setMessages((prev) => prev.map((m) => (m.id === item.id ? { ...m, reactions } : m)));
+      }
+    } catch (err) {
+      console.error('React error:', err);
+      fetchMessages(); // reconcile with server on failure
+    }
   };
 
   const handleSend = async () => {
@@ -638,7 +672,7 @@ export default function ChatScreen() {
         <View style={[styles.iceBreakerCard, { backgroundColor: isDark ? '#3D2A3A' : '#FFF0F3' }]}>
           {/* Gradient shimmer overlay */}
           <View style={styles.iceBreakerShimmer}>
-            <View style={[styles.iceBreakerShimmerDot, { backgroundColor: 'rgba(255,143,163,0.19)' }]} />
+            <View style={[styles.iceBreakerShimmerDot, { backgroundColor: 'rgba(196,50,94,0.19)' }]} />
             <View style={[styles.iceBreakerShimmerDot2, { backgroundColor: 'rgba(232,213,245,0.15)' }]} />
           </View>
 
@@ -743,6 +777,17 @@ export default function ChatScreen() {
           borderBottomRightRadius: 20,
         };
 
+    const reactions = Array.isArray(item.reactions) ? item.reactions : [];
+    const reactionsEl = reactions.length > 0 ? (
+      <View style={[styles.reactionRow, { alignSelf: isMine ? 'flex-end' : 'flex-start' }]}>
+        {reactions.map((r, i) => (
+          <View key={`${r.user_id}-${i}`} style={[styles.reactionPill, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+          </View>
+        ))}
+      </View>
+    ) : null;
+
     return (
       <View>
         {showDateSep && (
@@ -784,7 +829,7 @@ export default function ChatScreen() {
           {isVoice ? (
             <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}>
               {quoteEl}
-              <Pressable onLongPress={() => startReply(item)} delayLongPress={250}>
+              <Pressable onLongPress={() => setReactTarget(item)} delayLongPress={250}>
                 <VoiceMessageBubble
                   uri={getStorageUrl(item.media_url)}
                   isMine={isMine}
@@ -794,6 +839,7 @@ export default function ChatScreen() {
                   isSeen={item.is_seen}
                 />
               </Pressable>
+              {reactionsEl}
             </View>
           ) : isImage ? (
             <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}>
@@ -801,7 +847,7 @@ export default function ChatScreen() {
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => setViewerUri(getStorageUrl(item.media_url))}
-                onLongPress={() => startReply(item)}
+                onLongPress={() => setReactTarget(item)}
                 delayLongPress={250}
                 style={[styles.imgBubble, bubbleRadius]}
               >
@@ -821,10 +867,12 @@ export default function ChatScreen() {
                   )}
                 </View>
               </TouchableOpacity>
+              {reactionsEl}
             </View>
           ) : (
+            <View style={{ alignItems: isMine ? 'flex-end' : 'flex-start' }}>
             <Pressable
-              onLongPress={() => startReply(item)}
+              onLongPress={() => setReactTarget(item)}
               delayLongPress={250}
               style={[
                 styles.bubble,
@@ -854,6 +902,8 @@ export default function ChatScreen() {
                 )}
               </View>
             </Pressable>
+            {reactionsEl}
+            </View>
           )}
         </View>
 
@@ -1064,6 +1114,37 @@ export default function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
       <ImageViewerModal uri={viewerUri} onClose={() => setViewerUri(null)} />
+
+      {/* Reaction picker — opens on long-press of a message */}
+      <Modal
+        visible={!!reactTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReactTarget(null)}
+      >
+        <Pressable style={styles.reactBackdrop} onPress={() => setReactTarget(null)}>
+          <View style={[styles.reactPicker, { backgroundColor: colors.backgroundElement }]}>
+            {REACTION_EMOJIS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                style={styles.reactPickerBtn}
+                onPress={() => handleReact(reactTarget, emoji)}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.reactPickerEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity
+            style={[styles.reactReplyBtn, { backgroundColor: colors.backgroundElement }]}
+            onPress={() => { const t = reactTarget; setReactTarget(null); startReply(t); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-undo-outline" size={18} color={colors.text} />
+            <Text style={[styles.reactReplyText, { color: colors.text }]}>Répondre</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1130,6 +1211,61 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end', gap: 3,
   },
   msgTime: { fontSize: 10 },
+
+  // ── Reactions ──
+  reactionRow: {
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: -6,
+    marginHorizontal: 4,
+  },
+  reactionPill: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  reactionEmoji: { fontSize: 13 },
+  reactBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  reactPicker: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  reactPickerBtn: { paddingHorizontal: 4, paddingVertical: 2 },
+  reactPickerEmoji: { fontSize: 30 },
+  reactReplyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  reactReplyText: { fontSize: 14, fontWeight: '700' },
 
   // Image bubble
   imgBubble: {

@@ -34,15 +34,15 @@ import { parseDbJson, safeStr } from '@/utils/parsers';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const CATEGORY_META = {
-  bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#8B5CF6' },
-  bowling:    { label: 'Bowling',    icon: 'trophy-outline',     color: '#3B82F6' },
-  cinema:     { label: 'Cinéma',     icon: 'film-outline',       color: '#F59E0B' },
-  restaurant: { label: 'Restaurant', icon: 'restaurant-outline', color: '#10B981' },
-  sport:      { label: 'Sport',      icon: 'fitness-outline',    color: '#EF4444' },
-  cafe:       { label: 'Café',       icon: 'cafe-outline',       color: '#92400E' },
-  plage:      { label: 'Plage',      icon: 'sunny-outline',      color: '#F97316' },
-  parc:       { label: 'Parc',       icon: 'leaf-outline',       color: '#22C55E' },
-  autre:      { label: 'Autre',      icon: 'star-outline',       color: '#FF8FA3' },
+  bar:        { label: 'Bar',        icon: 'wine-outline',       color: '#C4325E' },
+  bowling:    { label: 'Bowling',    icon: 'trophy-outline',     color: '#C4325E' },
+  cinema:     { label: 'Cinéma',     icon: 'film-outline',       color: '#C4325E' },
+  restaurant: { label: 'Restaurant', icon: 'restaurant-outline', color: '#C4325E' },
+  sport:      { label: 'Sport',      icon: 'fitness-outline',    color: '#C4325E' },
+  cafe:       { label: 'Café',       icon: 'cafe-outline',       color: '#C4325E' },
+  plage:      { label: 'Plage',      icon: 'sunny-outline',      color: '#C4325E' },
+  parc:       { label: 'Parc',       icon: 'leaf-outline',       color: '#C4325E' },
+  autre:      { label: 'Autre',      icon: 'star-outline',       color: '#C4325E' },
 };
 
 function formatEventTime(dateStr) {
@@ -589,9 +589,9 @@ export default function EventDetailScreen() {
           {members.length > 0 && (
             <View style={styles.rsvpSummary}>
               {[
-                { key: 'coming',      icon: 'checkmark-circle', color: '#10B981' },
-                { key: 'maybe',       icon: 'help-circle',      color: '#F59E0B' },
-                { key: 'unavailable', icon: 'close-circle',     color: '#EF4444' },
+                { key: 'coming',      icon: 'checkmark-circle', color: '#C4325E' },
+                { key: 'maybe',       icon: 'help-circle',      color: '#C4325E' },
+                { key: 'unavailable', icon: 'close-circle',     color: '#C4325E' },
               ].map((opt) => {
                 const count = members.filter((m) => (m.rsvp_status || 'coming') === opt.key).length;
                 if (count === 0) return null;
@@ -609,10 +609,10 @@ export default function EventDetailScreen() {
           {members.map((m) => {
             const rsvp = m.rsvp_status || 'coming';
             const rsvpMeta = {
-              coming:      { icon: 'checkmark-circle', color: '#10B981' },
-              maybe:       { icon: 'help-circle',      color: '#F59E0B' },
-              unavailable: { icon: 'close-circle',     color: '#EF4444' },
-            }[rsvp] || { icon: 'checkmark-circle', color: '#10B981' };
+              coming:      { icon: 'checkmark-circle', color: '#C4325E' },
+              maybe:       { icon: 'help-circle',      color: '#C4325E' },
+              unavailable: { icon: 'close-circle',     color: '#C4325E' },
+            }[rsvp] || { icon: 'checkmark-circle', color: '#C4325E' };
             return (
               <TouchableOpacity key={m.id} style={styles.memberItem}
                 onPress={() => router.push(`/(tabs)/user/${m.id}`)}
@@ -667,9 +667,9 @@ export default function EventDetailScreen() {
         {event.is_joined && (
           <View style={styles.rsvpRow}>
             {[
-              { key: 'coming',      label: 'Je viens',   icon: 'checkmark-circle', color: '#10B981' },
-              { key: 'maybe',       label: 'Peut-être',  icon: 'help-circle',      color: '#F59E0B' },
-              { key: 'unavailable', label: 'Pas dispo',  icon: 'close-circle',     color: '#EF4444' },
+              { key: 'coming',      label: 'Je viens',   icon: 'checkmark-circle', color: '#C4325E' },
+              { key: 'maybe',       label: 'Peut-être',  icon: 'help-circle',      color: '#C4325E' },
+              { key: 'unavailable', label: 'Pas dispo',  icon: 'close-circle',     color: '#C4325E' },
             ].map((opt) => (
               <TouchableOpacity
                 key={opt.key}
@@ -852,8 +852,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
+    marginTop: 25
   },
-  countdownText: { fontSize: 14, fontWeight: '700' },
+  countdownText: {  fontSize: 14, fontWeight: '700' },
 
   memoryPrompt: {
     flexDirection: 'row',

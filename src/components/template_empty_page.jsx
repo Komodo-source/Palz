@@ -14,17 +14,17 @@ import {
 
 
 const PALETTE = {
-  rose: '#FF8FA3',
-  roseLight: '#FFB5C2',
+  rose: '#C4325E',
+  roseLight: '#E07A95',
   rosePale: '#FFF0F3',
   lavender: '#E8D5F5',
   lavenderPale: '#F8F4FF',
-  cream: '#FFF9F5',
+  cream: '#FFFFFF',
   white: '#FFFFFF',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
-  textLight: '#B0A098',
-  border: '#F0E0E0',
+  textDark: '#222222',
+  textMid: '#717171',
+  textLight: '#9A9A9A',
+  border: '#EBEBEB',
 };
 
 export default function LoginScreen() {

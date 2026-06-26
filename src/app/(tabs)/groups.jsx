@@ -31,15 +31,16 @@ import { GroupsSkeleton } from '@/components/Skeleton';
 
 const OUTDOOR_KEYWORDS = ['sport', 'plage', 'parc', 'balade', 'randon', 'extérieur', 'jardin', 'nature', 'piscine', 'forêt', 'vélo'];
 
-// New circles form at the start of each week (next Monday, 00:00 local).
+// New circles are formed automatically at the start of each week (Monday, 08:00 local).
 function getNextGroupCountdown() {
   const now = new Date();
-  const day = now.getDay(); // 0 = Sun … 6 = Sat
-  let daysUntil = (8 - day) % 7; // days until next Monday
-  if (daysUntil === 0) daysUntil = 7; // today is Monday → next one is in a week
+  const day = now.getDay(); // 0 = Sun … 1 = Mon … 6 = Sat
+  const daysUntil = (1 - day + 7) % 7; // days until next Monday (0 if today is Monday)
   const target = new Date(now);
   target.setDate(now.getDate() + daysUntil);
-  target.setHours(0, 0, 0, 0);
+  target.setHours(8, 0, 0, 0);
+  // If Monday 08:00 already passed (e.g. Monday afternoon), jump to next week.
+  if (target <= now) target.setDate(target.getDate() + 7);
   const diff = Math.max(0, target - now);
   return {
     days: Math.floor(diff / 86400000),
@@ -211,7 +212,6 @@ export default function GroupsScreen() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [voting, setVoting] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [rendezvousModalVisible, setRendezvousModalVisible] = useState(false);
@@ -311,20 +311,6 @@ export default function GroupsScreen() {
     };
   }, [showChat, group?.id, fetchMessages]);
 
-  const handleGenerate = async () => {
-    setGenerating(true);
-    try {
-      await groupsApi.generate();
-      await fetchGroup();
-      snackbar.success('✨ Cercle créé ! Découvre tes nouvelles copines !', 3000);
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Impossible de créer un groupe.';
-      Alert.alert('Erreur', msg);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const handleReportGroup = () => {
     if (!group?.id) return;
     const reasons = [
@@ -367,7 +353,7 @@ export default function GroupsScreen() {
             setGroup(null);
             setShowChat(false);
             setMessages([]);
-            snackbar.info('Tu as quitté le cercle. À la semaine prochaine 🌸', 2500);
+            snackbar.info('Tu as quitté le cercle. À la semaine prochaine 🍒', 2500);
           } catch (err) {
             console.error('Leave group error:', err);
             Alert.alert('Erreur', 'Impossible de quitter le groupe.');
@@ -985,9 +971,9 @@ export default function GroupsScreen() {
               <Text style={styles.compatTotal}>{Math.round(group.compatibility_score * 100)}%</Text>
             </View>
             {[
-              { label: 'Psychologique', pct: group.psych_score, weight: '40%', color: '#CC3D5E' },
-              { label: 'Préférences', pct: group.pref_score, weight: '35%', color: '#6D28D9' },
-              { label: 'Comportemental', pct: group.behav_score, weight: '25%', color: '#0369A1' },
+              { label: 'Psychologique', pct: group.psych_score, weight: '40%', color: '#C4325E' },
+              { label: 'Préférences', pct: group.pref_score, weight: '35%', color: '#C4325E' },
+              { label: 'Comportemental', pct: group.behav_score, weight: '25%', color: '#C4325E' },
             ].map(({ label, pct, weight, color }) => (
               pct != null ? (
                 <View key={label} style={styles.compatRow}>
@@ -1010,14 +996,14 @@ export default function GroupsScreen() {
           </Text>
           {(group.rendezvous_suggestions || []).length === 0 ? (
             <Text style={[styles.emptyRendezvous, { color: colors.textSecondary }]}>
-              Pas encore de suggestions — sois la première !
+              Pas encore de suggestions sois la première !
             </Text>
           ) : (
             (group.rendezvous_suggestions || []).map((sug) => {
               const likeCount = (sug.likes || []).length;
               const liked = (sug.likes || []).includes(currentUser?.id);
               return (
-                <View key={sug.id} style={[styles.rendezvousSuggestion, { borderColor: isDark ? '#3D332E' : '#F0E0E0' }]}>
+                <View key={sug.id} style={[styles.rendezvousSuggestion, { borderColor: isDark ? '#3D332E' : '#EBEBEB' }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.rendezvousLocation, { color: colors.text }]}>
                       {typeof sug.location === 'string' ? sug.location : ''}
@@ -1557,7 +1543,7 @@ export default function GroupsScreen() {
           <View style={styles.emptyChat}>
             <Ionicons name="chatbubbles-outline" size={36} color={PALETTE.rose} />
             <Text style={[styles.emptyChatText, { color: colors.textSecondary }]}>
-              Lancez la conversation ! 🌸
+              Lancez la conversation ! 🍒
             </Text>
             <Text style={[styles.emptyChatSub, { color: colors.textSecondary }]}>
               Brise-glaces pour commencer :
@@ -1668,7 +1654,7 @@ export default function GroupsScreen() {
             Ton groupe arrive bientôt
           </Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Chaque semaine, on forme un nouveau groupe avec des personnes qui te ressemblent. Reviens dimanche pour rencontrer tes nouvelles copines !
+            Chaque semaine, on forme un nouveau groupe avec des personnes qui te ressemblent. Reviens lundi pour rencontrer tes nouvelles copines !
           </Text>
 
           {/* Countdown card to the next weekly circle */}
@@ -1699,26 +1685,10 @@ export default function GroupsScreen() {
             <View style={styles.countdownNote}>
               <View style={styles.pulseDot} />
               <Text style={[styles.countdownNoteText, { color: colors.textSecondary }]}>
-                Mise à jour chaque dimanche à minuit
+                Nouveaux groupes chaque lundi à 8h
               </Text>
             </View>
           </View>
-
-          <TouchableOpacity
-            style={styles.generateButton}
-            onPress={handleGenerate}
-            disabled={generating}
-            activeOpacity={0.8}
-          >
-            {generating ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={18} color="#fff" />
-                <Text style={styles.generateButtonText}>Créer mon cercle</Text>
-              </>
-            )}
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.exploreButton, { borderColor: PALETTE.rose }]}
@@ -1834,26 +1804,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: Spacing.two,
-  },
-  generateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: PALETTE.rose,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    borderRadius: 18,
-    marginTop: Spacing.one,
-    shadowColor: PALETTE.rose,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  generateButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
   },
   // ── Countdown ──
   countdownCard: {
@@ -1981,7 +1931,7 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#8B6FB8',
     overflow: 'hidden',
-    shadowColor: '#7B61A8',
+    shadowColor: '#C4325E',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 20,
@@ -1994,7 +1944,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(255,143,163,0.30)',
+    backgroundColor: 'rgba(196,50,94,0.30)',
   },
   heroBlobB: {
     position: 'absolute',
@@ -2454,7 +2404,7 @@ const styles = StyleSheet.create({
   memberRevealLabelText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#CC3D5E',
+    color: '#C4325E',
   },
   compatHeader: {
     flexDirection: 'row',

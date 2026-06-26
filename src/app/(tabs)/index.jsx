@@ -76,7 +76,7 @@ function PhotoGallery({ images, onTap }) {
     return (
       <TouchableOpacity style={styles.imageContainer} onPress={onTap} activeOpacity={1}>
         <View style={[styles.imagePlaceholder, { backgroundColor: PALETTE.rosePale }]}>
-          <Text style={styles.placeholderEmoji}>🌸</Text>
+          <Text style={styles.placeholderEmoji}>🍒</Text>
         </View>
       </TouchableOpacity>
     );
@@ -244,10 +244,10 @@ function SwipeCard({ user, onSwipe, isTop }) {
   const allTags = [...metaTags, ...sportTags, ...hobbyTags].slice(0, 6);
 
   const tagStyle = (type) => {
-    if (type === 'sport') return { bg: '#EDE9FE', text: '#6D28D9', icon: '#6D28D9' };
-    if (type === 'hobby') return { bg: '#FFF0F3', text: '#CC3D5E', icon: PALETTE.rose };
-    if (type === 'vibe')  return { bg: '#FFF0F3', text: '#CC3D5E', icon: PALETTE.rose };
-    if (type === 'dispo') return { bg: '#E0F2FE', text: '#0369A1', icon: '#0369A1' };
+    if (type === 'sport') return { bg: '#EDE9FE', text: '#C4325E', icon: '#C4325E' };
+    if (type === 'hobby') return { bg: '#FFF0F3', text: '#C4325E', icon: PALETTE.rose };
+    if (type === 'vibe')  return { bg: '#FFF0F3', text: '#C4325E', icon: PALETTE.rose };
+    if (type === 'dispo') return { bg: '#E0F2FE', text: '#C4325E', icon: '#C4325E' };
     return { bg: '#F3F4F6', text: PALETTE.textDark, icon: PALETTE.textMid };
   };
 
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,107,138,0.1)',
+    backgroundColor: 'rgba(196,50,94,0.1)',
   },
   refreshBtn: {
     fontSize: 28,
@@ -683,18 +683,18 @@ const styles = StyleSheet.create({
   },
   likeStamp: {
     right: 30,
-    borderColor: '#FF8FA3',
+    borderColor: '#C4325E',
     transform: [{ rotate: '-20deg' }],
   },
   nopeStamp: {
     left: 30,
-    borderColor: '#FF8FA3',
+    borderColor: '#C4325E',
     transform: [{ rotate: '20deg' }],
   },
   stampText: {
     fontSize: 32,
     fontWeight: '900',
-    color: '#FF8FA3',
+    color: '#C4325E',
   },
   actionRow: {
     flexDirection: 'row',
@@ -718,12 +718,12 @@ const styles = StyleSheet.create({
   nopeBtn: {
     backgroundColor: '#fff',
     borderWidth: 2,
-    borderColor: '#FF8FA3',
-    shadowColor: '#FF8FA3',
+    borderColor: '#C4325E',
+    shadowColor: '#C4325E',
   },
   likeBtn: {
-    backgroundColor: '#FF8FA3',
-    shadowColor: '#FF8FA3',
+    backgroundColor: '#C4325E',
+    shadowColor: '#C4325E',
   },
   actionEmoji: {
     fontSize: 22,
@@ -744,7 +744,7 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     marginTop: Spacing.two,
-    backgroundColor: '#FF6B8A',
+    backgroundColor: '#C4325E',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
     borderRadius: 14,

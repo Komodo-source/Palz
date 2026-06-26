@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, {
   FadeInDown,
   useSharedValue,
@@ -38,7 +38,7 @@ const COL_WIDTH = (SCREEN_WIDTH - H_PAD * 2 - GAP) / 2;
 
 // Renders a wall photo at its true aspect ratio, filling the column width.
 // Landscape photos come out wide-and-short; portrait ones tall — both span the full width.
-function WallCardImage({ uri }) {
+function WallCardImage({ uri, onRatio }) {
   const [ratio, setRatio] = useState(0.85); // sensible default until the real size loads
   return (
     <Image
@@ -47,7 +47,11 @@ function WallCardImage({ uri }) {
       resizeMode="cover"
       onLoad={(e) => {
         const s = e?.nativeEvent?.source;
-        if (s?.width && s?.height) setRatio(s.width / s.height);
+        if (s?.width && s?.height) {
+          const r = s.width / s.height;
+          setRatio(r);
+          onRatio?.(uri, r);
+        }
       }}
     />
   );
@@ -85,8 +89,8 @@ function ReactionButton({ item, onReact, colors }) {
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <Animated.View style={animStyle}>
-        <Ionicons
-          name={item.has_reacted ? 'flower' : 'flower-outline'}
+        <MaterialCommunityIcons
+          name="fruit-cherries"
           size={14}
           color={item.has_reacted ? '#fff' : PALETTE.rose}
         />
@@ -132,6 +136,14 @@ export default function WallScreen() {
   const [themeModal, setThemeModal] = useState(false);
   const [viewerPhoto, setViewerPhoto] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  // Real width/height ratio per photo uri, reported once each image loads — drives the
+  // balanced masonry distribution below.
+  const [photoRatios, setPhotoRatios] = useState({});
+
+  const handlePhotoRatio = useCallback((uri, r) => {
+    if (!uri || !r) return;
+    setPhotoRatios((prev) => (prev[uri] === r ? prev : { ...prev, [uri]: r }));
+  }, []);
   const lastShownThemeId = useRef(null);
   const countdownInterval = useRef(null);
 
@@ -245,7 +257,7 @@ export default function WallScreen() {
       if (!spamAlertActive.current) {
         spamAlertActive.current = true;
         Alert.alert(
-          'Du calme ! 🌸',
+          'Du calme ! 🍒',
           'Tu appuies un peu vite sur le bouton. Prends ton temps !',
           [{ text: 'OK', onPress: () => { spamAlertActive.current = false; } }]
         );
@@ -296,7 +308,7 @@ export default function WallScreen() {
       try {
         await wallApi.reactToPost(postId);
         snackbar[desired ? 'like' : 'info'](
-          desired ? '🌸 Réaction envoyée !' : 'Réaction retirée',
+          desired ? '🍒 Réaction envoyée !' : 'Réaction retirée',
           1800
         );
       } catch {
@@ -325,14 +337,16 @@ export default function WallScreen() {
   const launchCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission refusée', "Accorde l'accès à l'appareil photo."); return; }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: true, aspect: [4, 5] });
+    // No forced crop — keep the photo's natural aspect ratio so the wall can show it uncropped.
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (!result.canceled && result.assets?.[0]) await doUpload(result.assets[0]);
   };
 
   const launchGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission refusée', "Accorde l'accès à ta galerie."); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, allowsEditing: true, aspect: [4, 5] });
+    // No forced crop — keep the photo's natural aspect ratio so the wall can show it uncropped.
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (!result.canceled && result.assets?.[0]) await doUpload(result.assets[0]);
   };
 
@@ -351,7 +365,7 @@ export default function WallScreen() {
       //   return;
       // }
       await fetchWall();
-      snackbar.success('Photo postée sur la Toile 🌸', 2500);
+      snackbar.success('Photo postée sur la Toile 🍒', 2500);
     } catch (err) {
       console.error('Wall upload error:', err);
       Alert.alert('Erreur', 'Impossible de poster la photo. Réessaie !');
@@ -400,7 +414,7 @@ export default function WallScreen() {
         {/* Photo — tap to fullscreen */}
         <TouchableOpacity activeOpacity={0.95} onPress={() => photoUri && setViewerPhoto(photoUri)} style={styles.cardImgWrap}>
           {photoUri ? (
-            <WallCardImage uri={photoUri} />
+            <WallCardImage uri={photoUri} onRatio={handlePhotoRatio} />
           ) : (
             <View style={[styles.cardImgPlaceholder, { height: 200 }]}>
               <Ionicons name="image-outline" size={32} color={PALETTE.rose} />
@@ -438,7 +452,7 @@ export default function WallScreen() {
               </Text>
             </View>
 
-            {/* Flower reaction with bounce */}
+            {/* Cherry reaction with bounce */}
             <ReactionButton item={item} onReact={handleReact} colors={colors} />
           </View>
 
@@ -508,8 +522,32 @@ export default function WallScreen() {
     });
   }, [posts]);
 
-  const leftPosts = displayPosts.filter((_, i) => i % 2 === 0);
-  const rightPosts = displayPosts.filter((_, i) => i % 2 === 1);
+  // Balanced masonry: place each post in whichever column is currently shorter,
+  // using the photo's real aspect ratio, so the two columns stay even and we don't
+  // leave a big blank at the bottom of the shorter one.
+  const FOOTER_EST = 96; // approx non-image card height (user row + action buttons + padding)
+  const { leftPosts, rightPosts, orderIndex } = useMemo(() => {
+    const left = [];
+    const right = [];
+    const order = new Map();
+    let leftH = 0;
+    let rightH = 0;
+    displayPosts.forEach((post, i) => {
+      order.set(post.id, i);
+      const raw = parseDbJson(post.wall_photo);
+      const uri = Array.isArray(raw) && raw.length > 0 ? getStorageUrl(raw[0]) : null;
+      const ratio = (uri && photoRatios[uri]) || 0.85; // width / height
+      const cardH = COL_WIDTH / ratio + FOOTER_EST;
+      if (leftH <= rightH) {
+        left.push(post);
+        leftH += cardH;
+      } else {
+        right.push(post);
+        rightH += cardH;
+      }
+    });
+    return { leftPosts: left, rightPosts: right, orderIndex: order };
+  }, [displayPosts, photoRatios]);
 
   if (loading) {
     return <WallSkeleton colors={colors} isDark={colorScheme === 'dark'} />;
@@ -593,10 +631,10 @@ export default function WallScreen() {
         >
           <View style={styles.cols}>
             <View style={styles.col}>
-              {leftPosts.map((item, i) => renderCard(item, i * 2))}
+              {leftPosts.map((item) => renderCard(item, orderIndex.get(item.id) ?? 0))}
             </View>
             <View style={styles.col}>
-              {rightPosts.map((item, i) => renderCard(item, i * 2 + 1))}
+              {rightPosts.map((item) => renderCard(item, orderIndex.get(item.id) ?? 0))}
             </View>
           </View>
           <View style={{ height: 100 }} />
@@ -796,10 +834,10 @@ const styles = StyleSheet.create({
   themeModalBox: { width: '100%', backgroundColor: '#fff', borderRadius: 28, padding: 28, alignItems: 'center', gap: 10 },
   themeModalIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: PALETTE.rosePale, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   themeModalEyebrow: { fontSize: 13, fontWeight: '600', color: PALETTE.rose },
-  themeModalTitle: { fontSize: 22, fontWeight: '800', color: '#4A3728', textAlign: 'center', lineHeight: 28 },
+  themeModalTitle: { fontSize: 22, fontWeight: '800', color: '#222222', textAlign: 'center', lineHeight: 28 },
   themeModalCountdown: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: PALETTE.rosePale, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   themeModalCountdownText: { fontSize: 13, fontWeight: '700', color: PALETTE.rose },
-  themeModalHint: { fontSize: 14, color: '#7A6B60', textAlign: 'center', lineHeight: 20, paddingHorizontal: 8 },
+  themeModalHint: { fontSize: 14, color: '#717171', textAlign: 'center', lineHeight: 20, paddingHorizontal: 8 },
   themeModalPostBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: PALETTE.rose, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 18, marginTop: 8,
@@ -807,7 +845,7 @@ const styles = StyleSheet.create({
   },
   themeModalPostBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   themeModalSkip: { marginTop: 4 },
-  themeModalSkipText: { fontSize: 13, color: '#B0A098', textDecorationLine: 'underline' },
+  themeModalSkipText: { fontSize: 13, color: '#9A9A9A', textDecorationLine: 'underline' },
 
   // ── Photo viewer ──
   viewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },

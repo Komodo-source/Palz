@@ -11,10 +11,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 const PALETTE = {
-  rose: '#FF8FA3',
+  rose: '#C4325E',
   rosePale: '#FFF0F3',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
+  textDark: '#222222',
+  textMid: '#717171',
 };
 
 // Builds the full-page Leaflet HTML with the given default coordinates
@@ -36,9 +36,9 @@ function buildMapHtml(lat, lng) {
     }
     #confirm-btn{
       position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
-      background:#FF8FA3;color:#fff;border:none;border-radius:14px;
+      background:#C4325E;color:#fff;border:none;border-radius:14px;
       padding:14px 36px;font-size:15px;font-weight:700;cursor:pointer;
-      z-index:9999;box-shadow:0 4px 16px rgba(255,143,163,0.45);
+      z-index:9999;box-shadow:0 4px 16px rgba(196,50,94,0.45);
       min-width:200px;text-align:center;
     }
     .leaflet-control-attribution{display:none}
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: '#fff',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F0E0E0',
+    borderBottomColor: '#EBEBEB',
   },
   closeBtn: {
     width: 40, height: 40, borderRadius: 20,

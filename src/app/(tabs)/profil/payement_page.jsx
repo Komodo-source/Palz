@@ -21,14 +21,14 @@ import ConfettiCannon from '@/components/ConfettiCannon';
 const isExpoGo = Constants.appOwnership === 'expo';
 
 const PALETTE = {
-  rose: '#FF8FA3',
-  roseLight: '#FFB5C2',
+  rose: '#C4325E',
+  roseLight: '#E07A95',
   rosePale: '#FFF0F3',
-  cream: '#FFF9F5',
+  cream: '#FFFFFF',
   white: '#FFFFFF',
-  textDark: '#4A3728',
-  textMid: '#7A6B60',
-  textLight: '#B0A098',
+  textDark: '#222222',
+  textMid: '#717171',
+  textLight: '#9A9A9A',
   gold: '#F59E0B',
   goldLight: '#FEF3C7',
 };
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   price: { fontSize: 46, fontWeight: '800', color: PALETTE.rose, lineHeight: 52 },
   pricePeriod: { fontSize: 18, fontWeight: '600', color: PALETTE.textMid, marginBottom: 8 },
   priceSub: { textAlign: 'center', fontSize: 13, color: PALETTE.textLight, marginTop: 4, marginBottom: 14 },
-  priceDivider: { height: 1, backgroundColor: '#F0E0E0', marginBottom: 14 },
+  priceDivider: { height: 1, backgroundColor: '#EBEBEB', marginBottom: 14 },
   trialRow: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' },
   trialText: { fontSize: 13, fontWeight: '600', color: PALETTE.textMid },
 
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#F0E0E0',
+    borderColor: '#EBEBEB',
     alignItems: 'center',
   },
   cancelBtnText: { fontSize: 14, fontWeight: '600', color: PALETTE.textLight },

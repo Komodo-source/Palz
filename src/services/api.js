@@ -243,6 +243,7 @@ export const messagesApi = {
   getMessages: (conversationId) => api.get(`/messages/${conversationId}`),
   updateStreak: (conversationId) => api.post(`/messages/update_streak`, conversationId),
   sendMessage: (data) => api.post('/messages/send', data),
+  reactToMessage: (messageId, emoji) => api.post('/messages/react', { messageId, emoji }),
   genrateIceBreaker: (data) => api.post('/messages/generate_personnal_iceBreaker', data),
   startConversation: (otherUserId) => api.post('/messages/start', { other_user_id: otherUserId }),
 };
